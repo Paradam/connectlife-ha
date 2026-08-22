@@ -38,7 +38,7 @@ class ConnectLifeEntity(CoordinatorEntity[ConnectLifeCoordinator]):
     _expose_offline_state = False
     _unavailable_status: str | None = None
     _unavailable_value: int | None = None
-    _available_when: Conditions = {}
+    _available_when: Conditions
 
     def __init__(
             self,
@@ -48,6 +48,7 @@ class ConnectLifeEntity(CoordinatorEntity[ConnectLifeCoordinator]):
             platform: Platform):
         """Initialize the entity."""
         super().__init__(coordinator)
+        self._available_when = {}
         self.device_id = appliance.device_id
         self.nickname = appliance.device_nickname
         self._attr_unique_id = f'{appliance.device_id}-{entity_name}'
