@@ -31,7 +31,7 @@ properties:
     translation_key: eco_meter
     sensor:
       read_only: true
-      unit_of_measurement: null
+      unit: null
       device_class: null
       state_class: null
 
