@@ -142,7 +142,7 @@
         },
         "available_when": {
           "$ref": "#/$defs/Conditions",
-          "description": "Optional runtime availability conditions. Every listed property must match. A list value means any listed value may match."
+          "description": "Optional runtime availability conditions. A dictionary is one AND group; a list of dictionaries is OR. Within a group, a list value means any listed value may match."
         },
         "entity_category": {
           "type": ["string", "null"],
@@ -182,7 +182,7 @@
         },
         "available_when": {
           "$ref": "#/$defs/Conditions",
-          "description": "Map of property name to required value. The button is only available when every listed property matches. A list value means any listed value may match. Replaces the inherited value as a whole."
+          "description": "Runtime availability conditions. A dictionary is one AND group; a list of dictionaries is OR. Within a group, a list value means any listed value may match. Replaces the inherited value as a whole."
         },
         "write": {
           "type": ["object", "null"],
@@ -466,11 +466,28 @@
         }
       ]
     },
-    "Conditions": {
-      "type": ["object", "null"],
+    "ConditionGroup": {
+      "type": "object",
       "additionalProperties": {
         "$ref": "#/$defs/ConditionValue"
       }
+    },
+    "Conditions": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ConditionGroup"
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ConditionGroup"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "ConditionalOptions": {
       "type": "object",

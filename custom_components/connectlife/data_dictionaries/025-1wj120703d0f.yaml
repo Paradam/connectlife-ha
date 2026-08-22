@@ -135,7 +135,11 @@ properties:
   # The app uses this property for both automatic dry levels and timed drying.
   - property: dry_time
     available_when:
-      Selected_program_ID: [1, 2, 4, 7, 8, 9, 10, 12, 14, 15, 16, 18, 19, 20, 21, 24, 44, 52, 56, 85]
+      # Dedicated dry programs do not expose DryModel.
+      - Selected_program_ID: [1, 2, 4, 85]
+      # Combination programs only expose the dry setting when drying is selected.
+      - Selected_program_ID: [7, 8, 9, 10, 12, 14, 15, 16, 18, 19, 20, 21, 24, 44, 52, 56]
+        DryModel: [1, 2]
     select:
       options:
         1: iron
@@ -446,6 +450,7 @@ properties:
   - property: ExtraRinseNum
     available_when:
       Selected_program_ID: [7, 8, 10, 11, 12, 15, 16, 18, 19, 20, 21, 24, 44, 52, 56]
+      Extra_Rinse: 1
     select:
       options:
         1: "1"

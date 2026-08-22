@@ -3,15 +3,14 @@
 from collections.abc import Mapping
 
 type ConditionValue = int | list[int]
-type Conditions = dict[str, ConditionValue]
+type ConditionGroup = dict[str, ConditionValue]
+type Conditions = ConditionGroup | list[ConditionGroup]
 
 
-def conditions_match(status_list: Mapping[str, object], conditions: Conditions) -> bool:
-    """Return whether all configured conditions match the current status.
-
-    A scalar expected value requires an exact match. A list means the current
-    value may match any value in the list. Different property entries are ANDed.
-    """
+def _condition_group_matches(
+    status_list: Mapping[str, object], conditions: ConditionGroup
+) -> bool:
+    """Return whether every condition in one AND group matches."""
     for name, expected in conditions.items():
         actual = status_list.get(name)
         if isinstance(expected, list):
@@ -20,3 +19,16 @@ def conditions_match(status_list: Mapping[str, object], conditions: Conditions) 
         elif actual != expected:
             return False
     return True
+
+
+def conditions_match(status_list: Mapping[str, object], conditions: Conditions) -> bool:
+    """Return whether the configured runtime conditions match device state.
+
+    A dictionary is one AND group: every property must match. A list of
+    dictionaries is an OR expression: at least one AND group must match.
+    Within a group, a list-valued expectation means the current value may
+    match any value in that list.
+    """
+    if isinstance(conditions, list):
+        return any(_condition_group_matches(status_list, group) for group in conditions)
+    return _condition_group_matches(status_list, conditions)
