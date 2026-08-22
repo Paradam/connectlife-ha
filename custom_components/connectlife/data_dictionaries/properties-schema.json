@@ -140,6 +140,10 @@
           "type": ["integer", "null"],
           "description": "If the property has this value, it is not available on the device, and no entity is created."
         },
+        "available_when": {
+          "$ref": "#/$defs/Conditions",
+          "description": "Optional runtime availability conditions. Every listed property must match. A list value means any listed value may match."
+        },
         "entity_category": {
           "type": ["string", "null"],
           "description": "https://developers.home-assistant.io/docs/core/entity/#registry-properties:~:text=automatic%20device%20registration.-,entity_category,-EntityCategory%20%7C%20None",
@@ -177,11 +181,8 @@
           "examples": ["mdi:play", "mdi:stop", "mdi:pause"]
         },
         "available_when": {
-          "type": ["object", "null"],
-          "additionalProperties": {
-            "type": "integer"
-          },
-          "description": "Map of property name to required value. The button is only available when every listed property currently has the listed value. Use to gate buttons behind a remote-control-allowed status property. Replaces the inherited value as a whole."
+          "$ref": "#/$defs/Conditions",
+          "description": "Map of property name to required value. The button is only available when every listed property matches. A list value means any listed value may match. Replaces the inherited value as a whole."
         },
         "write": {
           "type": ["object", "null"],
@@ -344,7 +345,14 @@
           "additionalProperties": {
             "type": "string"
           },
-          "description": "Map of integer to string."
+          "description": "Map of integer to string. Used when no options_when entry matches."
+        },
+        "options_when": {
+          "type": ["array", "null"],
+          "items": {
+            "$ref": "#/$defs/ConditionalOptions"
+          },
+          "description": "Ordered conditional option sets. The first entry whose when conditions match replaces options while that condition is true."
         },
         "unknown_value": {
           "$ref": "#/$defs/UnknownValue"
@@ -446,6 +454,39 @@
           "description": "Map of integer to string or boolean. Required for targets current_operation (string), state (string), temperature_unit (string), and is_away_mode_on (boolean)."
         }
       }
+    },
+    "ConditionValue": {
+      "oneOf": [
+        {"type": "integer"},
+        {
+          "type": "array",
+          "items": {"type": "integer"},
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      ]
+    },
+    "Conditions": {
+      "type": ["object", "null"],
+      "additionalProperties": {
+        "$ref": "#/$defs/ConditionValue"
+      }
+    },
+    "ConditionalOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "when": {
+          "$ref": "#/$defs/Conditions"
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": ["when", "options"]
     },
     "CombineSource": {
       "type": "object",

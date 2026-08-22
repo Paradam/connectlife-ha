@@ -14,6 +14,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from connectlife.appliance import ConnectLifeAppliance
 
+from .conditions import Conditions, conditions_match
 from .const import (
     CONF_DEVICES,
     CONF_DISABLE_BEEP,
@@ -37,6 +38,7 @@ class ConnectLifeEntity(CoordinatorEntity[ConnectLifeCoordinator]):
     _expose_offline_state = False
     _unavailable_status: str | None = None
     _unavailable_value: int | None = None
+    _available_when: Conditions = {}
 
     def __init__(
             self,
@@ -91,6 +93,7 @@ class ConnectLifeEntity(CoordinatorEntity[ConnectLifeCoordinator]):
                 or self.coordinator.data[self.device_id].offline_state == 1
             )
             and not self._is_value_unavailable()
+            and self._matches_available_when()
         )
 
     def _is_value_unavailable(self) -> bool:
@@ -101,6 +104,15 @@ class ConnectLifeEntity(CoordinatorEntity[ConnectLifeCoordinator]):
         status_list = self.coordinator.data[self.device_id].status_list
         return status_list.get(self._unavailable_status) == self._unavailable_value
 
+    def _matches_available_when(self) -> bool:
+        if not self._available_when:
+            return True
+        if self.device_id not in self.coordinator.data:
+            return False
+        return conditions_match(
+            self.coordinator.data[self.device_id].status_list, self._available_when
+        )
+
     @callback
     @abstractmethod
     def update_state(self):
@@ -109,7 +121,7 @@ class ConnectLifeEntity(CoordinatorEntity[ConnectLifeCoordinator]):
     @callback
     def _refresh_state(self) -> None:
         """Run subclass update_state() unless the value matches the unavailable sentinel."""
-        if not self._is_value_unavailable():
+        if not self._is_value_unavailable() and self._matches_available_when():
             self.update_state()
 
     @callback

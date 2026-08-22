@@ -8,6 +8,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from connectlife.appliance import ConnectLifeAppliance
 
+from .conditions import conditions_match
 from .const import DOMAIN
 from .coordinator import ConnectLifeCoordinator
 from .dictionaries import Button, Dictionaries
@@ -55,10 +56,7 @@ class ConnectLifeButton(ConnectLifeEntity, ButtonEntity):
         if not super().available:
             return False
         status_list = self.coordinator.data[self.device_id].status_list
-        for name, expected in self.button.available_when.items():
-            if status_list.get(name) != expected:
-                return False
-        return True
+        return conditions_match(status_list, self.button.available_when)
 
     @callback
     def update_state(self):
