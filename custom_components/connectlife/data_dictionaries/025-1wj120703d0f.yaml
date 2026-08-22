@@ -81,7 +81,29 @@ properties:
 
   - property: Spin_speed_rpm
     available_when:
-      Selected_program_ID: [1, 2, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 21, 22, 24, 44, 52, 56, 86]
+      Selected_program_ID:
+        - 1
+        - 2
+        - 6
+        - 7
+        - 8
+        - 9
+        - 10
+        - 11
+        - 12
+        - 14
+        - 15
+        - 16
+        - 18
+        - 19
+        - 20
+        - 21
+        - 22
+        - 24
+        - 44
+        - 52
+        - 56
+        - 86
     select:
       options:
         0: none
@@ -97,7 +119,10 @@ properties:
           options:
             8: "800"
         - when:
-            Selected_program_ID: [10, 19, 21]
+            Selected_program_ID:
+              - 10
+              - 19
+              - 21
           options:
             0: none
             4: "400"
@@ -111,14 +136,36 @@ properties:
             8: "800"
             15: "1500"
         - when:
-            Selected_program_ID: [22, 86]
+            Selected_program_ID:
+              - 22
+              - 86
           options:
             8: "800"
             15: "1500"
 
   - property: DryModel
     available_when:
-      Selected_program_ID: [7, 8, 9, 10, 11, 12, 14, 15, 16, 18, 19, 20, 21, 22, 24, 44, 51, 52, 56, 86]
+      Selected_program_ID:
+        - 7
+        - 8
+        - 9
+        - 10
+        - 11
+        - 12
+        - 14
+        - 15
+        - 16
+        - 18
+        - 19
+        - 20
+        - 21
+        - 22
+        - 24
+        - 44
+        - 51
+        - 52
+        - 56
+        - 86
     optional: false
     entity_category: null
     icon: mdi:washing-machine
@@ -129,7 +176,15 @@ properties:
         2: dry_only
       options_when:
         - when:
-            Selected_program_ID: [9, 11, 14, 20, 22, 24, 52, 86]
+            Selected_program_ID:
+              - 9
+              - 11
+              - 14
+              - 20
+              - 22
+              - 24
+              - 52
+              - 86
           options:
             0: wash
             1: wash_and_dry
@@ -138,10 +193,32 @@ properties:
   - property: dry_time
     available_when:
       # Dedicated dry programs do not expose DryModel.
-      - Selected_program_ID: [1, 2, 4, 85]
+      - Selected_program_ID:
+          - 1
+          - 2
+          - 4
+          - 85
       # Combination programs only expose the dry setting when drying is selected.
-      - Selected_program_ID: [7, 8, 9, 10, 12, 14, 15, 16, 18, 19, 20, 21, 24, 44, 52, 56]
-        DryModel: [1, 2]
+      - Selected_program_ID:
+          - 7
+          - 8
+          - 9
+          - 10
+          - 12
+          - 14
+          - 15
+          - 16
+          - 18
+          - 19
+          - 20
+          - 21
+          - 24
+          - 44
+          - 52
+          - 56
+        DryModel:
+          - 1
+          - 2
     select:
       options:
         1: iron
@@ -172,7 +249,22 @@ properties:
             180: 180_min
             240: 240_min
         - when:
-            Selected_program_ID: [2, 7, 8, 9, 12, 14, 15, 16, 18, 19, 20, 24, 44, 52, 56]
+            Selected_program_ID:
+              - 2
+              - 7
+              - 8
+              - 9
+              - 12
+              - 14
+              - 15
+              - 16
+              - 18
+              - 19
+              - 20
+              - 24
+              - 44
+              - 52
+              - 56
           options:
             1: iron
             2: cupboard
@@ -214,7 +306,25 @@ properties:
 
   - property: temperature
     available_when:
-      Selected_program_ID: [6, 7, 8, 9, 10, 11, 12, 15, 16, 18, 19, 21, 22, 24, 44, 52, 56, 86]
+      Selected_program_ID:
+        - 6
+        - 7
+        - 8
+        - 9
+        - 10
+        - 11
+        - 12
+        - 15
+        - 16
+        - 18
+        - 19
+        - 21
+        - 22
+        - 24
+        - 44
+        - 52
+        - 56
+        - 86
     select:
       options:
         0: cold
@@ -238,7 +348,12 @@ properties:
             6: "60"
             9: "90"
         - when:
-            Selected_program_ID: [8, 12, 24, 44, 56]
+            Selected_program_ID:
+              - 8
+              - 12
+              - 24
+              - 44
+              - 56
           options:
             0: cold
             2: "20"
@@ -246,11 +361,20 @@ properties:
             4: "40"
             6: "60"
         - when:
-            Selected_program_ID: [9, 22]
+            Selected_program_ID:
+              - 9
+              - 22
           options:
             0: cold
         - when:
-            Selected_program_ID: [10, 11, 18, 19, 21, 52, 86]
+            Selected_program_ID:
+              - 10
+              - 11
+              - 18
+              - 19
+              - 21
+              - 52
+              - 86
           options:
             0: cold
             2: "20"
@@ -373,16 +497,45 @@ properties:
 
   - property: AntiCrease
     available_when:
-      Selected_program_ID: [1, 2, 4, 7, 8, 11, 12, 14, 15, 16, 18, 19, 20, 22, 24, 44, 52, 56, 86]
-
+      Selected_program_ID:
+        - 1
+        - 2
+        - 4
+        - 7
+        - 8
+        - 11
+        - 12
+        - 14
+        - 15
+        - 16
+        - 18
+        - 19
+        - 20
+        - 22
+        - 24
+        - 44
+        - 52
+        - 56
+        - 86
   - property: Prewash
     available_when:
-      Selected_program_ID: [7, 8, 12, 15, 16, 18, 44, 51, 52, 56]
-
+      Selected_program_ID:
+        - 7
+        - 8
+        - 12
+        - 15
+        - 16
+        - 18
+        - 44
+        - 51
+        - 52
+        - 56
   - property: Steam
     available_when:
-      Selected_program_ID: [7, 8, 56]
-
+      Selected_program_ID:
+        - 7
+        - 8
+        - 56
   - property: DownLight
     optional: false
     entity_category: config
@@ -391,7 +544,25 @@ properties:
 
   - property: Quiet_model
     available_when:
-      Selected_program_ID: [1, 2, 6, 7, 8, 10, 12, 14, 15, 16, 18, 19, 20, 21, 24, 44, 56, 85]
+      Selected_program_ID:
+        - 1
+        - 2
+        - 6
+        - 7
+        - 8
+        - 10
+        - 12
+        - 14
+        - 15
+        - 16
+        - 18
+        - 19
+        - 20
+        - 21
+        - 24
+        - 44
+        - 56
+        - 85
     optional: false
     entity_category: null
     icon: mdi:weather-night
@@ -399,7 +570,20 @@ properties:
 
   - property: Gentle_Dry
     available_when:
-      Selected_program_ID: [1, 2, 7, 8, 12, 14, 15, 16, 18, 20, 24, 44, 56]
+      Selected_program_ID:
+        - 1
+        - 2
+        - 7
+        - 8
+        - 12
+        - 14
+        - 15
+        - 16
+        - 18
+        - 20
+        - 24
+        - 44
+        - 56
     optional: false
     entity_category: null
     icon: mdi:tumble-dryer
@@ -407,7 +591,15 @@ properties:
 
   - property: IntensiveWash
     available_when:
-      Selected_program_ID: [7, 8, 12, 15, 16, 18, 44, 56]
+      Selected_program_ID:
+        - 7
+        - 8
+        - 12
+        - 15
+        - 16
+        - 18
+        - 44
+        - 56
     optional: false
     entity_category: null
     icon: mdi:washing-machine-alert
@@ -415,7 +607,13 @@ properties:
 
   - property: ColdWash
     available_when:
-      Selected_program_ID: [7, 8, 12, 18, 44, 56]
+      Selected_program_ID:
+        - 7
+        - 8
+        - 12
+        - 18
+        - 44
+        - 56
     optional: false
     entity_category: null
     icon: mdi:snowflake
@@ -423,7 +621,9 @@ properties:
 
   - property: Stain_removal
     available_when:
-      Selected_program_ID: [7, 8]
+      Selected_program_ID:
+        - 7
+        - 8
     optional: false
     entity_category: null
     icon: mdi:liquid-spot
@@ -442,7 +642,12 @@ properties:
 
   - property: QuickerMode
     available_when:
-      Selected_program_ID: [7, 8, 12, 16, 52]
+      Selected_program_ID:
+        - 7
+        - 8
+        - 12
+        - 16
+        - 52
     select:
       options:
         0: none
@@ -451,8 +656,22 @@ properties:
 
   - property: ExtraRinseNum
     available_when:
-      Selected_program_ID: [7, 8, 10, 11, 12, 15, 16, 18, 19, 20, 21, 24, 44, 52, 56]
-      Extra_Rinse: 1
+      Selected_program_ID:
+        - 7
+        - 8
+        - 10
+        - 11
+        - 12
+        - 15
+        - 16
+        - 18
+        - 19
+        - 20
+        - 21
+        - 24
+        - 44
+        - 52
+        - 56
     select:
       options:
         1: "1"
