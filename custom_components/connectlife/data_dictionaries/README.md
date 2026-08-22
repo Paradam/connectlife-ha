@@ -170,9 +170,10 @@ Note that translation keys must be lowercase!
 | `hide`             | `true`, `false`                    | If Home Assistant should initially hide the entity for this property. Defaults to `false`, but is set to `true` for unknown properties.                                                                                                                                                             |
 | `optional`         | `true`, `false`                    | If the entity should be registered as disabled by default. The user can enable it from the Home Assistant UI. Use for rarely-useful properties (e.g., per-slot error codes). Defaults to `false`. Only applies to per-property platforms (`binary_sensor`, `number`, `select`, `sensor`, `switch`). |
 | `icon`             | `mdi:eye`, etc.                    | Icon to use for the entity.                                                                                                                                                                                                                                                                         |
-| `unavailable`      | integer                            | If the property has this value on the device, no entity is created for it. Use for properties that the device reports as "not available" with a sentinel value.                                                                                                                                     |
+| `unavailable`      | integer                            | If the property has this value on the device, the entity is unavailable at runtime. Use for properties that report a sentinel value when the control is not applicable.                                                                                                                             |
+| `available_when`   | dictionary or list of dictionaries | Optional runtime availability conditions. A dictionary is an AND group. A list of dictionaries is OR. Within a group, a list value means any listed integer may match. Useful for controls that depend on programs, modes, or capability flags.                                                     |
 | `entity_category`  | `config`, `diagnostic`             | Whether the entity should be considered a diagnostics or config entity. Defaults to `None`. [More info in HA docs](https://developers.home-assistant.io/docs/core/entity/#registry-properties:~:text=automatic%20device%20registration.-,entity_category,-EntityCategory%20%7C%20None)              |
-| `translation_key`  | string                             | Custom translation key for the entity, used instead of the one derived from the property name. Lets a device-specific mapping name an entity (in `strings.json`/translations). Must be lowercase. Only applies to per-property platforms.                    |
+| `translation_key`  | string                             | Custom translation key for the entity, used instead of the one derived from the property name. Lets a device-specific mapping name an entity (in `strings.json`/translations). Must be lowercase. Only applies to per-property platforms.                                                           |
 | `binary_sensor`    | [BinarySensor](#type-binarysensor) | Create a binary sensor of the property.                                                                                                                                                                                                                                                             |
 | `climate`          | [Climate](#type-climate)           | Map the property to a climate entity for the device.                                                                                                                                                                                                                                                |
 | `humidifier`       | [Humidifier](#type-humidifier)     | Map the property to a humidifier entity for the device.                                                                                                                                                                                                                                             |
@@ -425,11 +426,55 @@ Number entities can be set by the user.
 
 | Item            | Type                            | Description                                                                                                       |
 |-----------------|---------------------------------|-------------------------------------------------------------------------------------------------------------------|
-| `options`       | dictionary of integer to string | Required.                                                                                                         |
+| `options`       | dictionary of integer to string | Required default option set. Used when no `options_when` entry matches.                                            |
+| `options_when`  | list of conditional option sets | Optional. Each entry has `when` and `options`; the first matching entry replaces the default options at runtime.   |
 | `unknown_value` | integer                         | The value used by the API to signal unknown value. The entity will be reported as unknown without a warning.      |
 | `command`       | [Command](#command)             | Send writes to a different property than the status property, and/or offset the value. See [Command](#command).   |
 
 Remember to add [translation strings](#translation-strings) for the options.
+
+Conditional options are useful when the same API property has a different valid value set depending on another
+property, such as the selected laundry program:
+
+```yaml
+- property: temperature
+  available_when:
+    Selected_program_ID: [7, 8, 10]
+  select:
+    options:
+      0: cold
+    options_when:
+      - when:
+          Selected_program_ID: [7, 8]
+        options:
+          0: cold
+          3: "30"
+          4: "40"
+      - when:
+          Selected_program_ID: 10
+        options:
+          0: cold
+          3: "30"
+```
+
+Different keys inside `when` are ANDed. A list value is an OR for that one property. `options_when` is evaluated
+in order and the first matching entry wins.
+
+`available_when` uses the same condition syntax. A single dictionary requires every key to match. When availability needs alternatives, use a list of dictionaries; each dictionary is an AND group and the groups are ORed:
+
+```yaml
+- property: dry_time
+  available_when:
+    # Dedicated dry programs always expose the dry setting.
+    - Selected_program_ID: [1, 2, 4, 85]
+    # Combination programs expose it only in a drying cycle mode.
+    - Selected_program_ID: [7, 8, 56]
+      DryModel: [1, 2]
+  select:
+    options:
+      1: iron
+      2: cupboard
+```
 
 ## Type `Sensor`
 
@@ -494,7 +539,7 @@ becomes one HA button entity. A press sends the `write` map to the device in a s
 |------------------|---------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `key`            | string                          | Unique key for this button within the device. Used as the translation key, as part of the entity unique id, and as the merge identity when a feature override changes an inherited button.                                                  |
 | `icon`           | `mdi:play`, etc.                | Icon for the button.                                                                                                                                                                                                                         |
-| `available_when` | dictionary of string to integer | Optional. Map of property name to required value. The button is only available when every listed property currently has the listed value. Use to gate buttons behind a remote-control-allowed status property.                              |
+| `available_when` | dictionary or list of dictionaries | Optional. A dictionary is an AND group; a list of dictionaries is OR. Within a group, values may be integers or lists of accepted integers. Use to gate buttons behind runtime status properties.                              |
 | `write`          | dictionary of string to integer | Required for non-disabled buttons. Map of property name to value to send when pressed. Multiple entries are sent in a single request — useful for combos like "set delay + start".                                                          |
 | `disable`        | `true`, `false`                 | If `true`, suppress this button. Use in a feature override to remove a button inherited from the base when a device variant doesn't support that action code. Defaults to `false`.                                                          |
 

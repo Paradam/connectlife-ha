@@ -103,6 +103,7 @@
 | WF3S1243BB3              | Washing machine          | 025              | 1wj120459v0f                |
 |                          | Washing machine          | 025              | 1wj120514v0t                |
 | WF5i1214-RVW002          | Washing machine          | 025              | 1wj120560v0w                |
+| WD5i1215-RDB001          | Washing machine          | 025              | 1wj120703d0f                |
 |                          | Refrigerator             | 026              | 1b0330z0079j                |
 | HRCD483TBW               | Refrigerator             | 026              | 1b0470z0012j                |
 | RQ5P470SEIE              | Refrigerator             | 026              | 1b0470z0026j                |

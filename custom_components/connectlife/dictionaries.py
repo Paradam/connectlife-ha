@@ -14,6 +14,7 @@ from homeassistant.components.sensor import SensorDeviceClass, SensorStateClass
 from homeassistant.components.switch import SwitchDeviceClass
 from homeassistant.components.water_heater import STATE_OFF
 
+from .conditions import Conditions
 from .const import (
     ACTION,
     CURRENT_OPERATION,
@@ -43,6 +44,7 @@ NAME = "name"
 OFF = "off"
 ON = "on"
 OPTIONS = "options"
+OPTIONS_WHEN = "options_when"
 PRESET = "preset"
 PRESETS = "presets"
 PROPERTY = "property"
@@ -62,6 +64,7 @@ ENTITY_CATEGORY = "entity_category"
 TRANSLATION_KEY = "translation_key"
 UNKNOWN_VALUE = "unknown_value"
 UNIT = "unit"
+WHEN = "when"
 WRITE = "write"
 
 _LOGGER = logging.getLogger(__name__)
@@ -197,8 +200,17 @@ class Number:
         self.device_class = device_class
 
 
+@dataclass
+class ConditionalOptions:
+    """A conditional replacement option set for a select entity."""
+
+    when: Conditions
+    options: dict[int, str]
+
+
 class Select:
-    options: dict
+    options: dict[int, str]
+    options_when: list[ConditionalOptions]
     unknown_value: int | None
     command_name: str | None
     command_adjust: int = 0
@@ -212,6 +224,13 @@ class Select:
             self.options = {}
         else:
             self.options = options
+        self.options_when = [
+            ConditionalOptions(
+                when=_val(entry, WHEN, {}),
+                options=_val(entry, OPTIONS, {}),
+            )
+            for entry in _val(select, OPTIONS_WHEN, [])
+        ]
         self.unknown_value = _val(select, UNKNOWN_VALUE)
         command = _val(select, COMMAND, {})
         self.command_name = _val(command, NAME)
@@ -340,6 +359,7 @@ class Property:
     disable: bool
     optional: bool
     unavailable: int | None
+    available_when: Conditions
     entity_category: EntityCategory | None
     translation_key: str | None
     combine: list[CombineSource] | None
@@ -359,6 +379,7 @@ class Property:
         self.disable = bool(entry[DISABLE]) if DISABLE in entry else False
         self.optional = bool(entry[OPTIONAL]) if OPTIONAL in entry else False
         self.unavailable = _val(entry, UNAVAILABLE)
+        self.available_when = _val(entry, AVAILABLE_WHEN, {})
         entity_category = _val(entry, ENTITY_CATEGORY)
         self.entity_category = (
             EntityCategory[entity_category.upper()] if entity_category is not None else None
@@ -402,7 +423,7 @@ class Button:
 
     key: str
     icon: str | None
-    available_when: dict[str, int]
+    available_when: Conditions
     write: dict[str, int]
 
     def __init__(self, entry: dict):

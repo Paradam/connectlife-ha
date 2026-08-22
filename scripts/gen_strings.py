@@ -46,6 +46,21 @@ def _merged_properties(filename: str, parsed_properties: list[dict], bases: dict
     for prop in parsed_properties:
         yield _merge_property(base.get(prop["property"]), prop)
 
+
+def _platform_option_maps(entity_type: str, platform: dict | None) -> list[dict]:
+    """Return all option maps that can be exposed by a platform block."""
+    if platform is None:
+        return []
+    result = []
+    options = platform.get("options")
+    if options is not None:
+        result.append(options)
+    if entity_type == "select":
+        result.extend(
+            conditional["options"] for conditional in platform.get("options_when") or []
+        )
+    return result
+
 HA_STRINGS_URL = "https://raw.githubusercontent.com/home-assistant/core/dev/homeassistant/strings.json"
 
 
@@ -130,12 +145,11 @@ def main(basedir):
                             elif "name" not in strings["entity"][entity_type][key]:
                                 strings["entity"][entity_type][key]["name"] = pretty(name)
                             valid_properties.setdefault(entity_type, set()).add(key)
-                            if (
-                                    property[entity_type] is not None
-                                    and "options" in property[entity_type]
-                                    and property[entity_type]["options"] is not None
-                            ):
-                                for option in property[entity_type]["options"].values():
+                            option_maps = _platform_option_maps(
+                                entity_type, property[entity_type]
+                            )
+                            for option_map in option_maps:
+                                for option in option_map.values():
                                     valid_options.setdefault((entity_type, key), set()).add(option)
                             if (
                                     (
@@ -147,16 +161,16 @@ def main(basedir):
                                                     and property[entity_type]["device_class"] == "enum")
                                             or entity_type == "select"
                                     )
-                                    and "options" in property[entity_type]
                             ):
-                                for option in property[entity_type]["options"].values():
-                                    if option in ["off", "on"]:
-                                        continue
-                                    if not "state" in strings["entity"][entity_type][key]:
-                                        strings["entity"][entity_type][key]["state"] = {}
-                                    if not option in strings["entity"][entity_type][key]["state"]:
-                                        if include_option(option, filename):
-                                            strings["entity"][entity_type][key]["state"][option] = pretty(option)
+                                for option_map in option_maps:
+                                    for option in option_map.values():
+                                        if option in ["off", "on"]:
+                                            continue
+                                        if not "state" in strings["entity"][entity_type][key]:
+                                            strings["entity"][entity_type][key]["state"] = {}
+                                        if not option in strings["entity"][entity_type][key]["state"]:
+                                            if include_option(option, filename):
+                                                strings["entity"][entity_type][key]["state"][option] = pretty(option)
                                 if "state" in strings["entity"][entity_type][key] and not strings["entity"][entity_type][key]["state"]:
                                     del(strings["entity"][entity_type][key]["state"])
 

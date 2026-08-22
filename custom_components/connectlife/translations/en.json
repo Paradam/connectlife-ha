@@ -2215,6 +2215,13 @@
           "none": "None"
         }
       },
+      "delayendtime_minute": {
+        "name": "Delay end minutes",
+        "state": {
+          "30_min": "30 min",
+          "none": "None"
+        }
+      },
       "delaystart_delayend_mode_status": {
         "name": "Delay start mode",
         "state": {
@@ -2279,16 +2286,26 @@
           "180_min": "180 min",
           "240_min": "240 min",
           "30_min": "30 min",
+          "45_min": "45 min",
           "5_min": "5 min",
           "60_min": "60 min",
           "90_min": "90 min",
           "cupboard": "Cupboard",
+          "eco": "Eco",
           "extra_dry": "Extra dry",
           "iron": "Iron",
           "none": "None",
           "off": "Off",
           "pre-ironing": "Pre-ironing",
           "wardrobe": "Wardrobe"
+        }
+      },
+      "drymodel": {
+        "name": "Cycle mode",
+        "state": {
+          "dry_only": "Dry only",
+          "wash": "Wash",
+          "wash_and_dry": "Wash and dry"
         }
       },
       "extradry_setting": {
@@ -2397,9 +2414,11 @@
       "quickermode": {
         "name": "Quicker mode",
         "state": {
+          "fast": "Fast",
           "level_1": "Level 1",
           "level_2": "Level 2",
-          "none": "None"
+          "none": "None",
+          "super_fast": "Super fast"
         }
       },
       "rinse_aid_setting_status": {
@@ -2438,6 +2457,7 @@
       "selected_program_id": {
         "name": "Selected program",
         "state": {
+          "ai_super_wash": "AI super wash",
           "allergy_care": "Allergy care",
           "auto": "Auto",
           "baby_care": "Baby care",
@@ -2458,6 +2478,7 @@
           "mix": "Mix",
           "pets": "Pets",
           "power_30": "Power 30",
+          "power_39": "Power 39",
           "power_49": "Power 49",
           "quick_15": "Quick 15",
           "quick_30": "Quick 30",
@@ -2474,6 +2495,7 @@
           "time_dry": "Time dry",
           "towels": "Towels",
           "wash_and_dry_49": "Wash and dry 49",
+          "wash_and_dry_96": "Wash and dry 96",
           "wool": "Wool"
         }
       },
@@ -2651,10 +2673,26 @@
           "1000": "1000 RPM",
           "1200": "1200 RPM",
           "1400": "1400 RPM",
+          "1500": "1500 RPM",
+          "400": "400 RPM",
           "600": "600 RPM",
           "800": "800 RPM",
           "none": "None",
           "off": "Off"
+        }
+      },
+      "stain_removal": {
+        "name": "Stain removal",
+        "state": {
+          "blood": "Blood",
+          "coffee": "Coffee",
+          "grass": "Grass",
+          "juice": "Juice",
+          "milk": "Milk",
+          "oil": "Oil",
+          "soil": "Soil",
+          "sweat": "Sweat",
+          "wine": "Wine"
         }
       },
       "steam_123": {
@@ -3901,6 +3939,9 @@
       },
       "duration_of_clock": {
         "name": "Duration of clock"
+      },
+      "eco_meter": {
+        "name": "Eco meter"
       },
       "eco_mode_setting": {
         "name": "Eco mode setting"
@@ -8596,6 +8637,15 @@
       "dose_assist_status": {
         "name": "Dose assist"
       },
+      "dose_detergent_amount": {
+        "name": "Detergent dosing"
+      },
+      "dose_softener_amount": {
+        "name": "Softener dosing"
+      },
+      "downlight": {
+        "name": "Drum light"
+      },
       "drum_illumination": {
         "name": "Drum light"
       },
@@ -8620,6 +8670,9 @@
       "fota_cmd": {
         "name": "Firmware update"
       },
+      "gentle_dry": {
+        "name": "Gentle dry"
+      },
       "greasefilterstatus": {
         "name": "Grease filter timer"
       },
@@ -8643,6 +8696,9 @@
       },
       "ice_making_state": {
         "name": "Ice making state"
+      },
+      "intensivewash": {
+        "name": "Intensive wash"
       },
       "interior_light": {
         "name": "Interior light"
@@ -8691,6 +8747,9 @@
       },
       "proximitysensorstatus": {
         "name": "Proximity sensor"
+      },
+      "quiet_model": {
+        "name": "Night mode"
       },
       "sabbath_mode_switch_status": {
         "name": "Sabbath mode"
