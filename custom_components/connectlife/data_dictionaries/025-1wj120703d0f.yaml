@@ -26,11 +26,14 @@ properties:
         10: finished
 
   # This property is a relative 0-100 energy estimate for the selected program,
-  # not an energy meter. Values of 50 and 100 have been observed.
+  # not an energy meter. Values of 40, 50 and 100 have been observed.
   - property: Energy_estimate
     translation_key: eco_meter
     sensor:
       read_only: true
+      unit_of_measurement: null
+      device_class: null
+      state_class: null
 
   # Reported in tenths of a kilogram (e.g. 80 = 8.0 kg, 60 = 6.0 kg).
   - property: washing_program_kg
