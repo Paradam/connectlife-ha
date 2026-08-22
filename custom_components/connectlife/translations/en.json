@@ -3940,6 +3940,9 @@
       "duration_of_clock": {
         "name": "Duration of clock"
       },
+      "eco_meter": {
+        "name": "Eco meter"
+      },
       "eco_mode_setting": {
         "name": "Eco mode setting"
       },
