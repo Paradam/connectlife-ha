@@ -1,8 +1,8 @@
 # ConnectLife Appliance Card
 
 The ConnectLife integration bundles a Home Assistant-native Lovelace card for appliance control.
-The JavaScript module is served and loaded automatically when the integration starts, so there is
-no separate `/config/www` copy or Lovelace resource to maintain.
+The JavaScript module is served automatically by the integration and registered as a versioned
+Lovelace module resource. There is no separate `/config/www` copy to maintain.
 
 ## Add the card
 
@@ -31,9 +31,9 @@ state that matter for normal use, while the integration's mapping remains the so
 what is currently valid.
 
 For example, program-dependent washing-machine spin, temperature, drying and option availability
-continues to come from `available_when` / `options_when` in the data dictionaries. The card only
-renders controls Home Assistant currently exposes as available and uses the entity's current option
-list.
+continues to come from `available_when` / `options_when` in the data dictionaries. The card keeps
+known controls visible when they are temporarily unavailable, disables them, and uses the entity's
+current option list as the source of truth for selectable values.
 
 ### Washing machine
 
@@ -83,9 +83,6 @@ presets:
       switch.example_prewash: false
 ```
 
-The v0.3 card also migrates presets created by the earlier browser-local v0.2 prototype the first
-time it successfully connects to Home Assistant's preset store.
-
 ## Extending to more appliance types
 
 New appliance types should be added as another profile in `frontend/connectlife-appliance-card.js`.
@@ -100,3 +97,26 @@ Profiles provide:
 
 Shared discovery, Home Assistant service calls, action handling, presets, theming, responsive layout,
 and the generic fallback do not need to be reimplemented.
+
+
+## Appliance availability
+
+Primary program controls remain visible but disabled while an appliance is offline, asleep, or otherwise not reporting controllable state. The card distinguishes this from an idle/ready appliance and automatically enables the controls again when Home Assistant reports them available.
+
+## Display names and values
+
+The card uses Home Assistant's ConnectLife entity translations for program names, modes and enum values whenever available, including the active Home Assistant language. Raw API values are only humanized as a fallback. The **More settings** section keeps its expanded/collapsed state across normal Home Assistant state refreshes.
+
+## Live status and external changes
+
+The card separates **connectivity** from the appliance's operational state. The header shows an
+Online / Offline badge, while the main status follows the device status entity (for example Off,
+Standby, Program select, Running, Paused or Failure) and shows the current cycle phase separately
+when one is reported.
+
+The card consumes Home Assistant state objects directly on every Lovelace update. Changes made at
+the physical appliance or in the ConnectLife mobile app therefore update the card as soon as the
+ConnectLife coordinator receives them. ConnectLife is intentionally polled at a 60-second cadence,
+so an external change can take up to roughly one polling interval to appear. Statistics-only
+sensors are not used to infer connectivity because they remain available while an appliance is
+offline.

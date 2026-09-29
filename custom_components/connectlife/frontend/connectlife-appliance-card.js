@@ -1,5 +1,4 @@
 const VERSION = "0.3.0";
-const LEGACY_STORAGE_PREFIX = "connectlife-appliance-card:v1:";
 
 const PROFILE_DEFS = {
   washer: {
@@ -72,6 +71,9 @@ const PROFILE_DEFS = {
       softener: [
         ["softener_amount_status"],
         ["softener"],
+      ],
+      connectivity: [
+        ["offline_state", "connectivity"],
       ],
       remote: [
         ["remote_control_monitoring_set_commands_actions", "remote control"],
@@ -166,6 +168,9 @@ const PROFILE_DEFS = {
         ["daily_water_consumption", "daily water"],
         ["water_consumption_in_running_program"],
       ],
+      connectivity: [
+        ["offline_state", "connectivity"],
+      ],
       remote: [
         ["remote_control_monitoring_set_commands_actions", "remote control"],
         ["remote_control_monitoring_set_commands"],
@@ -254,6 +259,7 @@ class ConnectLifeApplianceCard extends HTMLElement {
     this._busy = new Set();
     this._renderPending = false;
     this._presetDialogOpen = false;
+    this._secondaryOpen = false;
     this._toast = "";
     this._lastDiscoverySignature = "";
     this._storedPresets = [];
@@ -278,6 +284,7 @@ class ConnectLifeApplianceCard extends HTMLElement {
       this._storedPresets = [];
       this._presetsLoadedFor = null;
       this._presetLoadPromise = null;
+      this._secondaryOpen = false;
     }
     this._lastDiscoverySignature = "";
     this._discover(true);
@@ -292,7 +299,7 @@ class ConnectLifeApplianceCard extends HTMLElement {
     this._ensureStoredPresets();
 
     const active = this.shadowRoot?.activeElement;
-    if (!first && active?.matches?.("select,input,button,ha-switch")) {
+    if (!first && active?.matches?.("select,input")) {
       this._renderPending = true;
       return;
     }
@@ -431,6 +438,7 @@ class ConnectLifeApplianceCard extends HTMLElement {
       water: ["sensor"],
       detergent: ["select", "sensor"],
       softener: ["select", "sensor"],
+      connectivity: ["binary_sensor"],
       remote: ["sensor", "binary_sensor", "switch"],
     };
 
@@ -490,25 +498,110 @@ class ConnectLifeApplianceCard extends HTMLElement {
     return s.state;
   }
 
+  _translationKey(entity) {
+    if (!entity) return null;
+    const s = this._state(entity);
+    return entity.reg?.translation_key || s?.attributes?.translation_key || null;
+  }
+
+  _localizedEntityState(entity, value) {
+    if (!entity || value == null || typeof this._hass?.localize !== "function") return null;
+    const translationKey = this._translationKey(entity);
+    if (!translationKey) return null;
+    const key = `component.connectlife.entity.${entity.domain}.${translationKey}.state.${String(value)}`;
+    const localized = this._hass.localize(key);
+    return localized && localized !== key ? localized : null;
+  }
+
+  _entityDisplayName(entity, fallback = "") {
+    if (!entity) return fallback;
+    if (entity.reg?.name) return entity.reg.name;
+    const translationKey = this._translationKey(entity);
+    if (translationKey && typeof this._hass?.localize === "function") {
+      const key = `component.connectlife.entity.${entity.domain}.${translationKey}.name`;
+      const localized = this._hass.localize(key);
+      if (localized && localized !== key) return localized;
+    }
+    const friendly = this._state(entity)?.attributes?.friendly_name;
+    if (friendly) return friendly;
+    return entity.name ? this._humanize(entity.name) : fallback;
+  }
+
+  _formatEntityValue(entity, value) {
+    if (value == null) return "—";
+    return this._localizedEntityState(entity, value) || this._humanize(value);
+  }
+
   _display(entity, fallback = "—") {
     const s = this._state(entity);
     if (!s || ["unavailable", "unknown"].includes(s.state)) return fallback;
+
+    // Home Assistant's native formatter has first preference for the current
+    // state because it handles locale-specific units, precision and translated
+    // enum states.
+    const formatted = this._hass.formatEntityState(s);
+    if (formatted && formatted !== s.state) return formatted;
+
+    const value = this._formatEntityValue(entity, s.state);
     const unit = s.attributes?.unit_of_measurement;
-    return unit ? `${this._humanize(s.state)} ${unit}` : this._humanize(s.state);
+    return unit ? `${value} ${unit}` : value;
   }
 
   _humanize(value) {
     if (value == null) return "—";
-    const s = String(value);
-    if (!s.includes("_")) return s;
-    return s
-      .split("_")
+    const original = String(value).trim();
+    if (!original) return "—";
+
+    // Common appliance values that otherwise look awkward when mechanically
+    // splitting snake_case. Most mapped values are localized above; these are
+    // deliberate fallbacks for new/untranslated firmware values.
+    const special = {
+      on: "On",
+      off: "Off",
+      true: "On",
+      false: "Off",
+      not_available: "Not available",
+      no_program_selected: "No program selected",
+      eco_40_60: "Eco 40-60",
+      intensive_59_32: "Intensive 59'/32'",
+      mix_synthetic: "Mix/Synthetic",
+      wool_manual: "Wool & Manual",
+      spinning_draining: "Spinning & Draining",
+      rinsing_softening: "Rinsing & Softening",
+      nature_dry: "NatureDry",
+      steam_tech: "SteamTech",
+      time_care_1: "Time Care 1",
+      time_care_2: "Time Care 2",
+    };
+    const normalized = original.toLowerCase();
+    if (special[normalized]) return special[normalized];
+
+    const temperature = normalized.match(/^(-?\d+(?:\.\d+)?)_([cf])$/);
+    if (temperature) return `${temperature[1]} °${temperature[2].toUpperCase()}`;
+    const rpm = normalized.match(/^(\d+)_rpm$/);
+    if (rpm) return `${rpm[1]} RPM`;
+
+    if (!/[ _-]/.test(original)) {
+      if (/^[a-z]+$/.test(original)) return original.charAt(0).toUpperCase() + original.slice(1);
+      return original;
+    }
+
+    const acronyms = new Map([
+      ["ai", "AI"],
+      ["uv", "UV"],
+      ["rpm", "RPM"],
+      ["wifi", "Wi-Fi"],
+    ]);
+    return original
+      .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .split(/[ _-]+/)
       .filter(Boolean)
       .map((part, i) => {
+        const lower = part.toLowerCase();
+        if (acronyms.has(lower)) return acronyms.get(lower);
         if (/^\d+$/.test(part)) return part;
-        if (/^(rpm|uv|eco)$/i.test(part)) return part.toUpperCase();
-        if (i === 0) return part.charAt(0).toUpperCase() + part.slice(1);
-        return part;
+        if (i === 0) return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+        return part.toLowerCase();
       })
       .join(" ");
   }
@@ -552,22 +645,119 @@ class ConnectLifeApplianceCard extends HTMLElement {
     return Math.max(0, Math.min(100, ((total - remaining) / total) * 100));
   }
 
+  _connectivityState() {
+    const connectivity = this._slots.connectivity;
+    if (connectivity) {
+      const state = String(this._state(connectivity)?.state || "").toLowerCase();
+      if (state === "on") return "online";
+      if (state === "off") return "offline";
+      if (["unavailable", "unknown", ""].includes(state)) return "unknown";
+    }
+
+    // When the optional connectivity entity is not exposed, infer connectivity
+    // from operational entities. Statistics are excluded because they are
+    // intentionally kept available while an appliance is offline.
+    const statusAnchors = [this._slots.status, this._slots.phase].filter(Boolean);
+    if (statusAnchors.some((entity) => !entity.unavailable)) return "online";
+    if (statusAnchors.length && statusAnchors.every((entity) => entity.unavailable)) return "offline";
+
+    const controlAnchors = (this._profile().primaryControls || [])
+      .map((slot) => this._slots[slot])
+      .filter(Boolean);
+    if (controlAnchors.some((entity) => !entity.unavailable)) return "online";
+    if (controlAnchors.length && controlAnchors.every((entity) => entity.unavailable)) return "offline";
+    return "unknown";
+  }
+
+  _availabilityState() {
+    const connectivity = this._connectivityState();
+    if (connectivity === "offline") return "offline";
+
+    const controls = (this._profile().primaryControls || [])
+      .map((slot) => this._slots[slot])
+      .filter(Boolean);
+    if (controls.length && controls.every((entity) => entity.unavailable)) return "unavailable";
+    return "available";
+  }
+
+  _statusRaw() {
+    const status = this._value(this._slots.status, "");
+    return /^(unknown|unavailable)$/i.test(status) ? "" : status;
+  }
+
+  _phaseRaw() {
+    const phase = this._value(this._slots.phase, "");
+    return /^(0|unknown|unavailable|not_available)$/i.test(phase) ? "" : phase;
+  }
+
   _statusKind() {
-    const raw = `${this._value(this._slots.status, "")} ${this._value(this._slots.phase, "")}`.toLowerCase();
-    if (/error|alarm|fault|problem/.test(raw)) return "error";
-    if (/pause/.test(raw)) return "paused";
-    if (/finished|complete|done|end/.test(raw)) return "done";
-    if (/running|wash|rinse|spin|drain|dry|heat/.test(raw)) return "running";
-    if (/program_select|standby|idle|off/.test(raw)) return "idle";
-    return "neutral";
+    const connectivity = this._connectivityState();
+    if (connectivity === "offline") return "offline";
+
+    const status = this._statusRaw().toLowerCase();
+    const phase = this._phaseRaw().toLowerCase();
+
+    // The device-level status is authoritative for power/operating state.
+    // Phase is a finer-grained detail while a cycle is active, or a fallback
+    // for devices that do not expose a dedicated status entity.
+    if (/error|alarm|fault|failure|problem/.test(status)) return "error";
+    if (/pause/.test(status)) return "paused";
+    if (/running/.test(status)) return "running";
+    if (/off|standby|idle|program_select|program selected|program_selected/.test(status)) return "idle";
+
+    if (/error|alarm|fault|failure|problem/.test(phase)) return "error";
+    if (/pause/.test(phase)) return "paused";
+    if (/finished|complete|done|end/.test(phase)) return "done";
+    if (/running|wash|rinse|spin|drain|dry|heat|prewash|preheat|ventilat/.test(phase)) return "running";
+    if (/program_not_selected|program_selected|delay_start_waiting/.test(phase)) return "idle";
+
+    if (status || phase || connectivity === "online") return "neutral";
+    return "unavailable";
   }
 
   _statusText() {
-    const phase = this._value(this._slots.phase, "");
-    const status = this._value(this._slots.status, "");
-    if (phase && !/^(0|unknown|unavailable)$/i.test(phase)) return this._humanize(phase);
-    if (status) return this._humanize(status);
-    return "Ready";
+    const connectivity = this._connectivityState();
+    if (connectivity === "offline") return "Offline";
+
+    const status = this._statusRaw();
+    const phase = this._phaseRaw();
+    if (status) return this._formatEntityValue(this._slots.status, status);
+    if (phase) return this._formatEntityValue(this._slots.phase, phase);
+    if (connectivity === "online") return "Online";
+    return "Status unavailable";
+  }
+
+  _phaseText() {
+    const status = this._statusRaw();
+    const phase = this._phaseRaw();
+    if (!phase) return "";
+    const formattedPhase = this._formatEntityValue(this._slots.phase, phase);
+    const formattedStatus = status ? this._formatEntityValue(this._slots.status, status) : "";
+    return formattedPhase !== formattedStatus ? formattedPhase : "";
+  }
+
+  _statusHint(kind) {
+    if (kind === "offline") return "The appliance is offline";
+    if (kind === "unavailable") return "Current appliance state is unavailable";
+    if (kind === "done") return "Cycle complete";
+    if (kind === "error") return "The appliance is reporting a problem";
+    if (kind === "paused") return "Cycle paused";
+    if (kind === "running") return "Cycle in progress";
+    if (kind === "idle") {
+      const status = this._statusRaw().toLowerCase();
+      if (status === "off") return "The appliance is powered off";
+      if (status === "standby") return "Ready for a program";
+      if (/program_select/.test(status)) return "Select or adjust a program";
+      return "Waiting for a cycle";
+    }
+    return this._connectivityState() === "online" ? "Connected to ConnectLife" : "Waiting for device status";
+  }
+
+  _connectivityLabel() {
+    const state = this._connectivityState();
+    if (state === "online") return "Online";
+    if (state === "offline") return "Offline";
+    return "Unknown";
   }
 
   _isOn(entity) {
@@ -639,38 +829,43 @@ class ConnectLifeApplianceCard extends HTMLElement {
 
   _controlForSlot(slot, label, icon) {
     const e = this._slots[slot];
-    if (!e || e.unavailable) return "";
+    if (!e) return "";
     if (!["select", "number", "input_number"].includes(e.domain)) return "";
 
     const s = this._state(e);
+    const unavailable = e.unavailable || !s;
     const busy = this._busy.has(e.entityId);
+    const disabled = unavailable || busy;
 
     if (e.domain === "select") {
-      const options = s.attributes?.options || [];
+      const options = s?.attributes?.options || [];
       const validOptions = options.filter((o) => !/^not_available$/i.test(String(o)));
-      if (!validOptions.length) return "";
+      if (!validOptions.length && !unavailable) return "";
       return `
-        <label class="dial-control ${busy ? "busy" : ""}">
+        <label class="dial-control ${busy ? "busy" : ""} ${unavailable ? "unavailable" : ""}">
           <span class="dial-icon"><ha-icon icon="${this._esc(icon)}"></ha-icon></span>
           <span class="dial-copy">
             <span class="dial-label">${this._esc(label)}</span>
-            <select data-select="${this._esc(e.entityId)}" ${busy ? "disabled" : ""}>
-              ${validOptions.map((o) => `<option value="${this._esc(o)}" ${String(o) === String(s.state) ? "selected" : ""}>${this._esc(this._humanize(o))}</option>`).join("")}
+            <select data-select="${this._esc(e.entityId)}" ${disabled ? "disabled" : ""}>
+              ${unavailable ? `<option selected>Unavailable</option>` : ""}
+              ${validOptions.map((o) => `<option value="${this._esc(o)}" ${!unavailable && String(o) === String(s.state) ? "selected" : ""}>${this._esc(this._formatEntityValue(e, o))}</option>`).join("")}
             </select>
           </span>
           <ha-icon class="chevron" icon="mdi:chevron-down"></ha-icon>
         </label>`;
     }
 
-    const min = s.attributes?.min ?? "";
-    const max = s.attributes?.max ?? "";
-    const step = s.attributes?.step ?? 1;
+    const min = s?.attributes?.min ?? "";
+    const max = s?.attributes?.max ?? "";
+    const step = s?.attributes?.step ?? 1;
     return `
-      <label class="dial-control ${busy ? "busy" : ""}">
+      <label class="dial-control ${busy ? "busy" : ""} ${unavailable ? "unavailable" : ""}">
         <span class="dial-icon"><ha-icon icon="${this._esc(icon)}"></ha-icon></span>
         <span class="dial-copy">
           <span class="dial-label">${this._esc(label)}</span>
-          <input data-number="${this._esc(e.entityId)}" type="number" value="${this._esc(s.state)}" min="${this._esc(min)}" max="${this._esc(max)}" step="${this._esc(step)}" ${busy ? "disabled" : ""}>
+          ${unavailable
+            ? `<span class="dial-unavailable">Unavailable</span>`
+            : `<input data-number="${this._esc(e.entityId)}" type="number" value="${this._esc(s.state)}" min="${this._esc(min)}" max="${this._esc(max)}" step="${this._esc(step)}" ${busy ? "disabled" : ""}>`}
         </span>
       </label>`;
   }
@@ -687,7 +882,7 @@ class ConnectLifeApplianceCard extends HTMLElement {
       if (!e || used.has(e.entityId) || e.unavailable) continue;
       if (!["switch", "input_boolean"].includes(e.domain)) continue;
       used.add(e.entityId);
-      found.push({ label, entity: e });
+      found.push({ label: this._entityDisplayName(e, label), entity: e });
     }
     return found;
   }
@@ -701,10 +896,10 @@ class ConnectLifeApplianceCard extends HTMLElement {
     const found = [];
     for (const [label, alias] of this._profile().secondaryAliases || []) {
       const e = this._findAliasEntity(alias);
-      if (!e || used.has(e.entityId) || e.unavailable) continue;
+      if (!e || used.has(e.entityId)) continue;
       if (!["switch", "input_boolean", "select", "number", "input_number"].includes(e.domain)) continue;
       used.add(e.entityId);
-      found.push({ label, entity: e });
+      found.push({ label: this._entityDisplayName(e, label), entity: e });
     }
     return found;
   }
@@ -769,19 +964,6 @@ class ConnectLifeApplianceCard extends HTMLElement {
     };
   }
 
-  _legacyPresetStorageKey() {
-    return `${LEGACY_STORAGE_PREFIX}${this._config.device_id}`;
-  }
-
-  _legacyLocalPresets() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(this._legacyPresetStorageKey()) || "[]");
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
-
   async _ensureStoredPresets() {
     const deviceId = this._config?.device_id;
     if (!this._hass || !deviceId || this._presetsLoadedFor === deviceId || this._presetLoadPromise) return;
@@ -798,7 +980,6 @@ class ConnectLifeApplianceCard extends HTMLElement {
       const result = await request;
       if (this._config?.device_id !== deviceId) return;
       this._storedPresets = Array.isArray(result?.presets) ? result.presets : [];
-      await this._migrateLegacyPresets(deviceId);
     } catch (err) {
       if (this._config?.device_id === deviceId) {
         this._toast = `Could not load saved presets: ${err?.message || err}`;
@@ -806,39 +987,6 @@ class ConnectLifeApplianceCard extends HTMLElement {
     } finally {
       if (this._presetLoadPromise === request) this._presetLoadPromise = null;
       this._render();
-    }
-  }
-
-  async _migrateLegacyPresets(deviceId) {
-    if (this._config?.device_id !== deviceId) return;
-    const legacy = this._legacyLocalPresets();
-    if (!legacy.length) return;
-
-    let migrated = 0;
-    for (const preset of legacy) {
-      if (!preset?.name || !preset?.entities || this._config?.device_id !== deviceId) continue;
-      try {
-        const result = await this._hass.callWS({
-          type: "connectlife/appliance_card/presets/save",
-          device_id: deviceId,
-          name: String(preset.name),
-          entities: preset.entities,
-        });
-        if (this._config?.device_id !== deviceId) return;
-        this._storedPresets = Array.isArray(result?.presets) ? result.presets : this._storedPresets;
-        migrated += 1;
-      } catch {
-        return;
-      }
-    }
-
-    if (migrated) {
-      try {
-        localStorage.removeItem(this._legacyPresetStorageKey());
-      } catch {
-        // Browser storage can be blocked; the server-side migration is still valid.
-      }
-      this._toast = `Migrated ${migrated} saved preset${migrated === 1 ? "" : "s"} into Home Assistant`;
     }
   }
 
@@ -1011,6 +1159,9 @@ class ConnectLifeApplianceCard extends HTMLElement {
     const remaining = activeCycle ? rawRemaining : null;
     const progress = activeCycle ? this._progress() : null;
     const status = this._statusText();
+    const phase = this._phaseText();
+    const connectivity = this._connectivityState();
+    const connectivityLabel = this._connectivityLabel();
     const program = this._display(this._slots.program, "");
     const door = this._display(this._slots.door, "");
     const actions = this._actionState();
@@ -1026,19 +1177,23 @@ class ConnectLifeApplianceCard extends HTMLElement {
             <div class="eyebrow">${this._esc(profile.label)}</div>
             <div class="title">${this._esc(this._config.title || this._device?.name_by_user || this._device?.name || profile.label)}</div>
           </div>
-          ${door ? `<button class="door-pill" data-more-slot="door" type="button"><ha-icon icon="mdi:door"></ha-icon>${this._esc(door)}</button>` : ""}
+          <div class="hero-badges">
+            <span class="connectivity-pill ${this._esc(connectivity)}"><span class="connectivity-dot"></span>${this._esc(connectivityLabel)}</span>
+            ${door ? `<button class="door-pill" data-more-slot="door" type="button"><ha-icon icon="mdi:door"></ha-icon>${this._esc(door)}</button>` : ""}
+          </div>
         </div>
 
         <div class="hero-body">
           ${ring}
           <div class="hero-copy">
             <div class="status-line">${this._esc(status)}</div>
+            ${phase ? `<div class="phase-line">${this._esc(phase)}</div>` : ""}
             ${program ? `<div class="program-line">${this._esc(program)}</div>` : ""}
             ${remaining != null ? `
               <div class="time-line">
                 <strong>${this._esc(this._formatMinutes(remaining))}</strong>
                 <span>remaining · finishes ${this._esc(this._finishTime(remaining))}</span>
-              </div>` : `<div class="time-line idle-copy"><span>${kind === "done" ? "Cycle complete" : "Ready when you are"}</span></div>`}
+              </div>` : `<div class="time-line idle-copy"><span>${this._esc(this._statusHint(kind))}</span></div>`}
           </div>
         </div>
 
@@ -1064,30 +1219,67 @@ class ConnectLifeApplianceCard extends HTMLElement {
 
   _renderPrimaryControls() {
     const controls = [];
+    const used = new Set();
+    const addSlot = (slot, label, icon) => {
+      const entity = this._slots[slot];
+      if (entity) used.add(entity.entityId);
+      controls.push(this._controlForSlot(slot, entity ? this._entityDisplayName(entity, label) : label, icon));
+    };
+
     if (this._profileName === "washer") {
-      controls.push(this._controlForSlot("program", "Program", "mdi:tshirt-crew"));
-      controls.push(this._controlForSlot("temperature", "Temperature", "mdi:thermometer"));
-      controls.push(this._controlForSlot("spin", "Spin", "mdi:rotate-3d-variant"));
-      controls.push(this._controlForSlot("mode", "Mode", "mdi:tune-variant"));
+      addSlot("program", "Program", "mdi:tshirt-crew");
+      addSlot("temperature", "Temperature", "mdi:thermometer");
+      addSlot("spin", "Spin", "mdi:rotate-3d-variant");
+      addSlot("mode", "Mode", "mdi:tune-variant");
     } else if (this._profileName === "dishwasher") {
-      controls.push(this._controlForSlot("program", "Program", "mdi:dishwasher"));
-      controls.push(this._controlForSlot("mode", "Mode", "mdi:tune-variant"));
-      controls.push(this._controlForSlot("timeProgram", "Duration", "mdi:timer-outline"));
+      addSlot("program", "Program", "mdi:dishwasher");
+      addSlot("mode", "Mode", "mdi:tune-variant");
+      addSlot("timeProgram", "Duration", "mdi:timer-outline");
     } else {
       const generic = this._entities.filter(
-        (e) => !e.category && !e.unavailable && ["select", "number", "input_number"].includes(e.domain)
+        (e) => !e.category && ["select", "number", "input_number"].includes(e.domain)
       ).slice(0, 4);
       for (const e of generic) {
-        const label = this._humanize(e.name);
+        const label = this._entityDisplayName(e, this._humanize(e.name));
         const slot = `generic-${controls.length}`;
         this._slots[slot] = e;
+        used.add(e.entityId);
         controls.push(this._controlForSlot(slot, label, e.state.attributes?.icon || "mdi:tune"));
       }
     }
 
+    // A feature-specific mapping can use a new translation key before the card
+    // profile knows about it. Fall back to the device's writable select/number
+    // entities so the card never becomes an empty shell solely because an
+    // alias changed. Action selects are deliberately excluded.
+    if (this._profileName !== "generic" && !controls.some(Boolean)) {
+      const fallback = this._entities.filter((e) =>
+        !e.category &&
+        !used.has(e.entityId) &&
+        ["select", "number", "input_number"].includes(e.domain) &&
+        e.key !== "actions" && !e.key.endsWith("_actions")
+      ).slice(0, 4);
+      for (const e of fallback) {
+        const slot = `fallback-${controls.length}`;
+        this._slots[slot] = e;
+        controls.push(this._controlForSlot(slot, this._entityDisplayName(e, this._humanize(e.name)), e.state.attributes?.icon || "mdi:tune"));
+      }
+    }
+
     const html = controls.filter(Boolean).join("");
-    if (!html) return "";
-    return `<div class="control-grid">${html}</div>`;
+    if (html) return `<div class="control-grid">${html}</div>`;
+
+    if (this._profileName === "washer" || this._profileName === "dishwasher") {
+      return `
+        <div class="control-notice">
+          <ha-icon icon="mdi:information-outline"></ha-icon>
+          <div>
+            <strong>No appliance controls are currently exposed</strong>
+            <span>If the appliance is powered off or asleep, turn it on or enable remote control. If it is already active, reload the ConnectLife integration so its writable entities can be discovered.</span>
+          </div>
+        </div>`;
+    }
+    return "";
   }
 
   _renderOptions() {
@@ -1113,45 +1305,52 @@ class ConnectLifeApplianceCard extends HTMLElement {
     if (!rows.length) return "";
 
     return `
-      <details class="more">
-        <summary><span>More settings</span><ha-icon icon="mdi:chevron-down"></ha-icon></summary>
-        <div class="more-body">
+      <section class="more ${this._secondaryOpen ? "open" : ""}">
+        <button class="more-toggle" data-secondary-toggle type="button" aria-expanded="${this._secondaryOpen ? "true" : "false"}">
+          <span>More settings</span><ha-icon icon="mdi:chevron-down"></ha-icon>
+        </button>
+        ${this._secondaryOpen ? `<div class="more-body">
           ${rows.map(({ label, entity }) => this._renderSecondaryRow(label, entity)).join("")}
-        </div>
-      </details>`;
+        </div>` : ""}
+      </section>`;
   }
 
   _renderSecondaryRow(label, e) {
     const s = this._state(e);
+    const unavailable = e.unavailable || !s;
+    const disabled = unavailable || this._busy.has(e.entityId);
     if (["switch", "input_boolean"].includes(e.domain)) {
       return `
-        <div class="secondary-row">
+        <div class="secondary-row ${unavailable ? "unavailable" : ""}">
           <button class="row-info" data-more="${this._esc(e.entityId)}" type="button">
             <span>${this._esc(label)}</span>
-            <small>${this._esc(this._humanize(s.state))}</small>
+            <small>${this._esc(unavailable ? "Unavailable" : this._formatEntityValue(e, s.state))}</small>
           </button>
-          <ha-switch data-toggle="${this._esc(e.entityId)}" ${s.state === "on" ? "checked" : ""} ${this._busy.has(e.entityId) ? "disabled" : ""}></ha-switch>
+          <ha-switch data-toggle="${this._esc(e.entityId)}" ${!unavailable && s.state === "on" ? "checked" : ""} ${disabled ? "disabled" : ""}></ha-switch>
         </div>`;
     }
 
     if (e.domain === "select") {
-      const options = (s.attributes?.options || []).filter((o) => !/^not_available$/i.test(String(o)));
+      const options = unavailable ? [] : (s.attributes?.options || []).filter((o) => !/^not_available$/i.test(String(o)));
       return `
-        <label class="secondary-row">
+        <div class="secondary-row ${unavailable ? "unavailable" : ""}">
           <button class="row-info" data-more="${this._esc(e.entityId)}" type="button">
             <span>${this._esc(label)}</span>
           </button>
-          <select class="mini-select" data-select="${this._esc(e.entityId)}" ${this._busy.has(e.entityId) ? "disabled" : ""}>
-            ${options.map((o) => `<option value="${this._esc(o)}" ${String(o) === String(s.state) ? "selected" : ""}>${this._esc(this._humanize(o))}</option>`).join("")}
+          <select class="mini-select" data-select="${this._esc(e.entityId)}" ${disabled ? "disabled" : ""}>
+            ${unavailable ? `<option selected>Unavailable</option>` : ""}
+            ${options.map((o) => `<option value="${this._esc(o)}" ${String(o) === String(s.state) ? "selected" : ""}>${this._esc(this._formatEntityValue(e, o))}</option>`).join("")}
           </select>
-        </label>`;
+        </div>`;
     }
 
     return `
-      <label class="secondary-row">
+      <div class="secondary-row ${unavailable ? "unavailable" : ""}">
         <button class="row-info" data-more="${this._esc(e.entityId)}" type="button"><span>${this._esc(label)}</span></button>
-        <input class="mini-number" data-number="${this._esc(e.entityId)}" type="number" value="${this._esc(s.state)}" min="${this._esc(s.attributes?.min ?? "")}" max="${this._esc(s.attributes?.max ?? "")}" step="${this._esc(s.attributes?.step ?? 1)}">
-      </label>`;
+        ${unavailable
+          ? `<span class="mini-unavailable">Unavailable</span>`
+          : `<input class="mini-number" data-number="${this._esc(e.entityId)}" type="number" value="${this._esc(s.state)}" min="${this._esc(s.attributes?.min ?? "")}" max="${this._esc(s.attributes?.max ?? "")}" step="${this._esc(s.attributes?.step ?? 1)}" ${disabled ? "disabled" : ""}>`}
+      </div>`;
   }
 
   _renderAlerts() {
@@ -1201,8 +1400,8 @@ class ConnectLifeApplianceCard extends HTMLElement {
       .slice(0, 6);
 
     return `
-      ${toggles.length ? `<div class="section-block"><div class="section-title">Controls</div><div class="option-grid">${toggles.map((e) => `<button class="option-chip ${this._isOn(e) ? "active" : ""}" data-toggle="${this._esc(e.entityId)}"><ha-icon icon="${this._esc(e.state.attributes?.icon || "mdi:toggle-switch-outline")}"></ha-icon><span>${this._esc(this._humanize(e.name))}</span></button>`).join("")}</div></div>` : ""}
-      ${status.length ? `<div class="generic-status">${status.map((e) => `<button data-more="${this._esc(e.entityId)}"><span>${this._esc(this._humanize(e.name))}</span><strong>${this._esc(this._display(e))}</strong></button>`).join("")}</div>` : ""}
+      ${toggles.length ? `<div class="section-block"><div class="section-title">Controls</div><div class="option-grid">${toggles.map((e) => `<button class="option-chip ${this._isOn(e) ? "active" : ""}" data-toggle="${this._esc(e.entityId)}"><ha-icon icon="${this._esc(e.state.attributes?.icon || "mdi:toggle-switch-outline")}"></ha-icon><span>${this._esc(this._entityDisplayName(e, this._humanize(e.name)))}</span></button>`).join("")}</div></div>` : ""}
+      ${status.length ? `<div class="generic-status">${status.map((e) => `<button data-more="${this._esc(e.entityId)}"><span>${this._esc(this._entityDisplayName(e, this._humanize(e.name)))}</span><strong>${this._esc(this._display(e))}</strong></button>`).join("")}</div>` : ""}
     `;
   }
 
@@ -1243,6 +1442,11 @@ class ConnectLifeApplianceCard extends HTMLElement {
       .title-area{min-width:0}
       .eyebrow{font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;color:var(--secondary-text-color);margin-bottom:3px}
       .title{font-size:1.3rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .hero-badges{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+      .connectivity-pill{border-radius:999px;padding:6px 9px;display:inline-flex;align-items:center;gap:7px;background:var(--secondary-background-color);color:var(--secondary-text-color);font-size:.78rem;font-weight:500}
+      .connectivity-dot{width:8px;height:8px;border-radius:50%;background:var(--disabled-text-color,var(--secondary-text-color))}
+      .connectivity-pill.online .connectivity-dot{background:var(--state-binary_sensor-connectivity-on-color,var(--state-active-color,var(--primary-color)))}
+      .connectivity-pill.offline .connectivity-dot{background:var(--state-binary_sensor-connectivity-off-color,var(--disabled-text-color,var(--secondary-text-color)))}
       .door-pill{display:flex;align-items:center;gap:6px;border:0;border-radius:999px;padding:6px 9px;background:var(--secondary-background-color);color:var(--secondary-text-color);cursor:pointer;font-size:.78rem}
       .door-pill ha-icon{--mdc-icon-size:17px}
       .hero-body{display:grid;grid-template-columns:auto minmax(0,1fr);gap:18px;align-items:center;margin-top:18px}
@@ -1253,6 +1457,7 @@ class ConnectLifeApplianceCard extends HTMLElement {
       .progress-inner ha-icon{--mdc-icon-size:29px;color:var(--primary-color)}
       .progress-inner span{font-size:.72rem;color:var(--secondary-text-color)}
       .status-line{font-size:1.32rem;font-weight:600}
+      .phase-line{margin-top:2px;font-size:.92rem;color:var(--secondary-text-color)}
       .program-line{margin-top:3px;color:var(--secondary-text-color);font-size:.95rem}
       .time-line{margin-top:12px;display:flex;flex-direction:column}
       .time-line strong{font-size:1.12rem}
@@ -1276,13 +1481,21 @@ class ConnectLifeApplianceCard extends HTMLElement {
       .control-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:16px}
       .dial-control{min-height:62px;border:1px solid var(--divider-color);border-radius:14px;padding:9px 10px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;background:color-mix(in srgb,var(--secondary-background-color) 45%,transparent)}
       .dial-control.busy{opacity:.55}
+      .dial-control.unavailable{opacity:.66;background:color-mix(in srgb,var(--secondary-background-color) 28%,transparent)}
+      .dial-control.unavailable .dial-icon{color:var(--secondary-text-color);background:var(--secondary-background-color)}
       .dial-icon{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:color-mix(in srgb,var(--primary-color) 11%,transparent);color:var(--primary-color)}
       .dial-icon ha-icon{--mdc-icon-size:20px}
       .dial-copy{min-width:0;display:flex;flex-direction:column;gap:2px}
       .dial-label{font-size:.72rem;color:var(--secondary-text-color)}
       .dial-control select,.dial-control input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--primary-text-color);font-weight:500;padding:0;appearance:none}
       .dial-control input{appearance:auto}
+      .dial-unavailable{font-weight:500;color:var(--secondary-text-color)}
       .chevron{--mdc-icon-size:18px;color:var(--secondary-text-color);pointer-events:none}
+      .control-notice{margin:0 16px 16px;border:1px solid var(--divider-color);border-radius:14px;padding:12px 13px;display:flex;gap:10px;align-items:flex-start;background:color-mix(in srgb,var(--secondary-background-color) 35%,transparent)}
+      .control-notice ha-icon{--mdc-icon-size:21px;color:var(--secondary-text-color);margin-top:1px}
+      .control-notice div{display:flex;flex-direction:column;gap:3px}
+      .control-notice strong{font-size:.9rem}
+      .control-notice span{font-size:.78rem;line-height:1.4;color:var(--secondary-text-color)}
       .section-block{padding:2px 16px 16px}
       .section-title{font-size:.78rem;font-weight:600;color:var(--secondary-text-color);text-transform:uppercase;letter-spacing:.035em;margin:0 2px 9px}
       .option-grid{display:flex;flex-wrap:wrap;gap:8px}
@@ -1297,15 +1510,16 @@ class ConnectLifeApplianceCard extends HTMLElement {
       .metric small{font-size:.7rem;color:var(--secondary-text-color)}
       .metric strong{font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .more{border-top:1px solid var(--divider-color)}
-      .more summary{list-style:none;min-height:48px;padding:0 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;font-weight:500}
-      .more summary::-webkit-details-marker{display:none}
-      .more summary ha-icon{--mdc-icon-size:20px;color:var(--secondary-text-color);transition:transform .15s ease}
-      .more[open] summary ha-icon{transform:rotate(180deg)}
+      .more-toggle{width:100%;min-height:48px;border:0;padding:0 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;font:inherit;font-weight:500;background:transparent;color:var(--primary-text-color);text-align:left}
+      .more-toggle ha-icon{--mdc-icon-size:20px;color:var(--secondary-text-color);transition:transform .15s ease}
+      .more.open .more-toggle ha-icon{transform:rotate(180deg)}
       .more-body{padding:0 16px 12px}
       .secondary-row{min-height:48px;display:flex;align-items:center;gap:10px}
+      .secondary-row.unavailable{opacity:.62}
       .row-info{min-width:0;flex:1;border:0;background:transparent;text-align:left;padding:0;display:flex;flex-direction:column;cursor:pointer}
       .row-info small{color:var(--secondary-text-color);font-size:.73rem}
       .mini-select,.mini-number{max-width:46%;min-width:112px;height:36px;border:1px solid var(--divider-color);border-radius:9px;padding:0 8px;background:var(--card-background-color);color:var(--primary-text-color)}
+      .mini-unavailable{color:var(--secondary-text-color);font-size:.82rem}
       .generic-status{border-top:1px solid var(--divider-color);padding:8px 16px 14px}
       .generic-status button{width:100%;min-height:42px;border:0;background:transparent;display:flex;justify-content:space-between;gap:12px;align-items:center;padding:0;text-align:left;cursor:pointer}
       .generic-status button span{color:var(--secondary-text-color)}
@@ -1328,6 +1542,7 @@ class ConnectLifeApplianceCard extends HTMLElement {
         .progress-inner ha-icon{--mdc-icon-size:25px}
         .control-grid{grid-template-columns:1fr;padding:14px 12px}
         .section-block{padding-left:12px;padding-right:12px}
+        .control-notice{margin-left:12px;margin-right:12px}
         .metrics{grid-template-columns:repeat(2,minmax(0,1fr));padding-left:12px;padding-right:12px}
         .preset-strip,.alert-strip{padding-left:12px;padding-right:12px}
       }
@@ -1410,6 +1625,11 @@ class ConnectLifeApplianceCard extends HTMLElement {
       el.addEventListener("blur", () => queueMicrotask(() => this._flushPendingRender()));
     });
 
+    this.shadowRoot.querySelector("[data-secondary-toggle]")?.addEventListener("click", () => {
+      this._secondaryOpen = !this._secondaryOpen;
+      this._render();
+    });
+
     const actionState = this._actionState();
     this.shadowRoot.querySelector('[data-action="primary"]')?.addEventListener("click", () => this._runAction(actionState.primary));
     this.shadowRoot.querySelector('[data-action="secondary"]')?.addEventListener("click", () => this._runAction(actionState.secondary));
@@ -1456,14 +1676,104 @@ class ConnectLifeApplianceCard extends HTMLElement {
 }
 
 class ConnectLifeApplianceCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this._hass = null;
+    this._config = {
+      device_id: "",
+      title: "",
+      profile: "auto",
+      show_consumption: true,
+      show_secondary: true,
+      presets: [],
+    };
+    this._deviceSignature = "";
+    this._renderPending = false;
+  }
+
   setConfig(config) {
-    this._config = config || {};
-    this._render();
+    this._config = {
+      device_id: "",
+      title: "",
+      profile: "auto",
+      show_consumption: true,
+      show_secondary: true,
+      presets: [],
+      ...(config || {}),
+    };
+    this._requestRender();
   }
 
   set hass(hass) {
+    const first = !this._hass;
     this._hass = hass;
+
+    // The editor only depends on the device/entity registry. Home Assistant
+    // updates `hass` for every state change, and rebuilding the editor on each
+    // update destroys an open native <select>, making its dropdown disappear.
+    // Ignore ordinary state-only updates and render only when the set of
+    // ConnectLife devices (or their display names) actually changes.
+    const signature = this._connectLifeDeviceSignature();
+    if (first || signature !== this._deviceSignature) {
+      this._deviceSignature = signature;
+      this._requestRender();
+    }
+  }
+
+  _activeEditorControl() {
+    // The card editor itself is normally nested inside several Home Assistant
+    // shadow roots. document.activeElement therefore often points at an outer
+    // HA host instead of the native control. Check :focus and this element's
+    // root first so an open select is reliably detected in every editor host.
+    const focused = this.querySelector?.("select:focus, input:focus");
+    if (focused) return focused;
+
+    const rootActive = this.getRootNode?.()?.activeElement;
+    if (rootActive && this.contains(rootActive) && rootActive.matches?.("select, input")) {
+      return rootActive;
+    }
+
+    const documentActive = this.ownerDocument?.activeElement;
+    if (documentActive && this.contains(documentActive) && documentActive.matches?.("select, input")) {
+      return documentActive;
+    }
+    return null;
+  }
+
+  _requestRender() {
+    if (this._activeEditorControl()) {
+      this._renderPending = true;
+      return;
+    }
+    this._renderPending = false;
     this._render();
+  }
+
+  _flushPendingRender() {
+    if (!this._renderPending) return;
+    this._renderPending = false;
+    this._render();
+  }
+
+  _connectLifeDeviceSignature() {
+    if (!this._hass) return "";
+    const deviceIds = new Set(
+      Object.values(this._hass.entities || {})
+        .filter((entity) => entity?.platform === "connectlife" && entity.device_id)
+        .map((entity) => entity.device_id)
+    );
+    return [...deviceIds]
+      .sort()
+      .map((deviceId) => {
+        const device = this._hass.devices?.[deviceId];
+        return [
+          deviceId,
+          device?.name_by_user || "",
+          device?.name || "",
+          device?.model || "",
+        ].join("\u001f");
+      })
+      .join("\u001e");
   }
 
   _esc(v) {
@@ -1476,14 +1786,13 @@ class ConnectLifeApplianceCardEditor extends HTMLElement {
 
   _devices() {
     if (!this._hass) return [];
+    const connectLifeDeviceIds = new Set(
+      Object.values(this._hass.entities || {})
+        .filter((entity) => entity?.platform === "connectlife" && entity.device_id)
+        .map((entity) => entity.device_id)
+    );
     return Object.values(this._hass.devices || {})
-      .filter((device) =>
-        Object.keys(this._hass.states).some(
-          (entityId) =>
-            this._hass.entities?.[entityId]?.device_id === device.id &&
-            this._hass.entities?.[entityId]?.platform === "connectlife"
-        )
-      )
+      .filter((device) => connectLifeDeviceIds.has(device.id))
       .sort((a, b) =>
         String(a.name_by_user || a.name || "").localeCompare(String(b.name_by_user || b.name || ""))
       );
@@ -1499,8 +1808,9 @@ class ConnectLifeApplianceCardEditor extends HTMLElement {
 
   _render() {
     if (!this._hass) return;
+    const config = this._config || {};
     const devices = this._devices();
-    const profile = this._config.profile || "auto";
+    const profile = config.profile || "auto";
 
     this.innerHTML = `
       <style>
@@ -1515,13 +1825,13 @@ class ConnectLifeApplianceCardEditor extends HTMLElement {
           <span>ConnectLife appliance</span>
           <select id="device">
             <option value="">Select device</option>
-            ${devices.map((d) => `<option value="${this._esc(d.id)}" ${d.id === this._config.device_id ? "selected" : ""}>${this._esc(d.name_by_user || d.name || d.id)}</option>`).join("")}
+            ${devices.map((d) => `<option value="${this._esc(d.id)}" ${d.id === config.device_id ? "selected" : ""}>${this._esc(d.name_by_user || d.name || d.id)}</option>`).join("")}
           </select>
         </label>
 
         <label>
           <span>Title override</span>
-          <input id="title" value="${this._esc(this._config.title || "")}" placeholder="Use Home Assistant device name">
+          <input id="title" value="${this._esc(config.title || "")}" placeholder="Use Home Assistant device name">
         </label>
 
         <label>
@@ -1538,15 +1848,14 @@ class ConnectLifeApplianceCardEditor extends HTMLElement {
 
         <label class="switch-row">
           <span>Show energy / water</span>
-          <ha-switch id="consumption" ${this._config.show_consumption !== false ? "checked" : ""}></ha-switch>
+          <ha-switch id="consumption" ${config.show_consumption !== false ? "checked" : ""}></ha-switch>
         </label>
 
         <label class="switch-row">
           <span>Show additional settings</span>
-          <ha-switch id="secondary" ${this._config.show_secondary !== false ? "checked" : ""}></ha-switch>
+          <ha-switch id="secondary" ${config.show_secondary !== false ? "checked" : ""}></ha-switch>
         </label>
 
-        <label class="switch-row">
         <div class="help">
           The card discovers supported controls from the selected ConnectLife device and only shows capabilities that actually exist.
           Washing machines and dishwashers receive purpose-built layouts; other device types fall back to a compact generic view. Saved presets live in Home Assistant storage.
@@ -1559,6 +1868,15 @@ class ConnectLifeApplianceCardEditor extends HTMLElement {
     this.querySelector("#profile")?.addEventListener("change", (e) => this._changed({ profile: e.target.value }));
     this.querySelector("#consumption")?.addEventListener("change", (e) => this._changed({ show_consumption: e.target.checked }));
     this.querySelector("#secondary")?.addEventListener("change", (e) => this._changed({ show_secondary: e.target.checked }));
+
+    // If a HA/config update arrived while a native editor control was open,
+    // apply the deferred redraw once that interaction has finished. `focusout`
+    // bubbles, so one handler covers both selects and the title input.
+    this.querySelector(".editor")?.addEventListener("focusout", () => {
+      queueMicrotask(() => {
+        if (!this._activeEditorControl()) this._flushPendingRender();
+      });
+    });
   }
 }
 

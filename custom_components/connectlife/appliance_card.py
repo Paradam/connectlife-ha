@@ -12,8 +12,10 @@ from uuid import uuid4
 
 import voluptuous as vol
 
-from homeassistant.components import frontend, websocket_api
+from homeassistant.components import websocket_api
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.components.lovelace.const import DOMAIN as LOVELACE_DOMAIN
+from homeassistant.components.lovelace.resources import ResourceStorageCollection
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
@@ -233,14 +235,63 @@ async def websocket_delete_preset(
     connection.send_result(msg["id"], {"presets": presets})
 
 
+async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
+    """Register or update the appliance card as a Lovelace module resource.
+
+    The bundled card is loaded as a Home Assistant Lovelace module resource.
+    """
+    lovelace_data = hass.data.get(LOVELACE_DOMAIN)
+    if lovelace_data is None:
+        _LOGGER.warning(
+            "Lovelace is not available; ConnectLife appliance card resource was not registered"
+        )
+        return
+
+    resources = lovelace_data.get("resources")
+    if resources is None:
+        _LOGGER.warning(
+            "Lovelace resource registry is not available; ConnectLife appliance card resource was not registered"
+        )
+        return
+    await resources.async_get_info()
+
+    resource_url = f"{CARD_URL}?v={CARD_VERSION}"
+    matches = [
+        item
+        for item in resources.async_items()
+        if str(item.get("url", "")).split("?", 1)[0] == CARD_URL
+    ]
+
+    if not isinstance(resources, ResourceStorageCollection):
+        if not any(item.get("url") == resource_url for item in matches):
+            _LOGGER.warning(
+                "Lovelace resources are not storage-managed; add %s as a module resource manually",
+                resource_url,
+            )
+        return
+
+    if matches:
+        primary = matches[0]
+        if primary.get("url") != resource_url or primary.get("type") != "module":
+            await resources.async_update_item(
+                primary["id"], {"res_type": "module", "url": resource_url}
+            )
+        for duplicate in matches[1:]:
+            await resources.async_delete_item(duplicate["id"])
+    else:
+        await resources.async_create_item(
+            {"res_type": "module", "url": resource_url}
+        )
+
+
 async def async_setup_appliance_card(hass: HomeAssistant) -> None:
     """Serve and register the appliance card plus its preset API."""
     hass.data.setdefault(DOMAIN, {})
 
     await hass.http.async_register_static_paths(
-        [StaticPathConfig(CARD_URL, str(CARD_PATH), cache_headers=True)]
+        [StaticPathConfig(CARD_URL, str(CARD_PATH), cache_headers=False)]
     )
-    frontend.add_extra_js_url(hass, f"{CARD_URL}?v={CARD_VERSION}")
+    await _async_register_lovelace_resource(hass)
 
     preset_store = ApplianceCardPresetStore(hass)
     await preset_store.async_load()

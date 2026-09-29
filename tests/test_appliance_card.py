@@ -41,3 +41,60 @@ async def test_appliance_card_preset_store_round_trip(hass):
 
     assert await reloaded.async_delete("device-1", preset_id) == []
     assert reloaded.presets_for_device("device-1") == []
+
+
+async def test_appliance_card_registers_versioned_lovelace_resource(hass, monkeypatch):
+    """The bundled card is registered through Lovelace resources, not extra JS."""
+    import custom_components.connectlife.appliance_card as appliance_card
+
+    class FakeResourceStorageCollection:
+        def __init__(self):
+            self.items = [
+                {
+                    "id": "old",
+                    "url": "/connectlife_static/connectlife-appliance-card.js?v=0.3.0",
+                    "type": "module",
+                },
+                {
+                    "id": "duplicate",
+                    "url": "/connectlife_static/connectlife-appliance-card.js?v=0.3.0&duplicate=1",
+                    "type": "module",
+                },
+            ]
+
+        async def async_get_info(self):
+            return {"resources": len(self.items)}
+
+        def async_items(self):
+            return list(self.items)
+
+        async def async_update_item(self, item_id, updates):
+            item = next(item for item in self.items if item["id"] == item_id)
+            item.update({"type": updates.get("res_type", item.get("type")), "url": updates["url"]})
+            return item
+
+        async def async_delete_item(self, item_id):
+            self.items = [item for item in self.items if item["id"] != item_id]
+
+        async def async_create_item(self, data):
+            item = {
+                "id": "created",
+                "type": data["res_type"],
+                "url": data["url"],
+            }
+            self.items.append(item)
+            return item
+
+    resources = FakeResourceStorageCollection()
+    monkeypatch.setattr(appliance_card, "ResourceStorageCollection", FakeResourceStorageCollection)
+    hass.data["lovelace"] = {"resources": resources}
+
+    await appliance_card._async_register_lovelace_resource(hass)
+
+    assert resources.items == [
+        {
+            "id": "old",
+            "url": "/connectlife_static/connectlife-appliance-card.js?v=0.3.0",
+            "type": "module",
+        }
+    ]
