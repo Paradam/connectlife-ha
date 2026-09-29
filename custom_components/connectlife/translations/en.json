@@ -2470,7 +2470,7 @@
           "drum_clean": "Drum clean",
           "duvet": "Duvet",
           "eco": "Eco",
-          "eco_40_60": "Eco 40-60",
+          "eco_40_60": "Eco 40\u201360",
           "full_load_49": "Full load 49",
           "hand_wash": "Hand wash",
           "ion_refresh": "Ion refresh",
@@ -2510,7 +2510,7 @@
           "draining": "Draining",
           "drum_clean": "Drum clean",
           "eco": "Eco",
-          "eco_40_60": "Eco 40-60",
+          "eco_40_60": "Eco 40\u201360",
           "extra_hygiene": "Extra Hygiene",
           "glass": "Glass",
           "hygiene": "Hygiene",
@@ -2530,7 +2530,7 @@
           "spinning_draining": "Spinning & Draining",
           "sportswear": "Sportswear",
           "time_program": "Time program",
-          "white_cotton": "White Cotton",
+          "white_cotton": "White cotton",
           "wool_manual": "Wool & Manual"
         }
       },
@@ -2548,7 +2548,6 @@
           "fast": "Fast",
           "night": "Night",
           "normal": "Normal",
-          "not_available": "Not available",
           "speed": "Speed"
         }
       },
@@ -5707,7 +5706,7 @@
           "cotton_dry": "Cotton dry",
           "cotton_storage": "Cotton storage",
           "drum_clean": "Drum clean",
-          "eco_40_60": "Eco 40-60",
+          "eco_40_60": "Eco 40\u201360",
           "extra_hygiene": "Extra hygiene",
           "fast89": "Fast89",
           "iron": "Iron",

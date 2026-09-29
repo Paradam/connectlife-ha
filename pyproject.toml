@@ -1,6 +1,6 @@
 [project]
 name = "connectlife-ha"
-version = "0.46.0"
+version = "0.46.1"
 description = "Custom Home Assistant component for ConnectLife devices"
 readme = "README.md"
 requires-python = ">=3.13.2"
@@ -29,5 +29,7 @@ pythonpath = ["."]
 
 [tool.pyright]
 pythonVersion = "3.13"
+venvPath = "."
+venv = ".venv"
 include = ["custom_components/connectlife"]
 typeCheckingMode = "basic"

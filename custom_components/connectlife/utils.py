@@ -119,7 +119,7 @@ def to_unit(unit: str | None, appliance: ConnectLifeAppliance, dictionary: Dicti
                     unit = unit_sensor.options[unit_value]  # type: ignore[index]
             elif has_platform(Platform.SELECT, unit_property):
                 unit_select = unit_property.select
-                if unit_value in unit_select.options:
+                if isinstance(unit_value, int) and unit_value in unit_select.options:
                     unit = unit_select.options[unit_value]
     if unit is None:
         return None

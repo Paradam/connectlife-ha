@@ -3,6 +3,9 @@
 The ConnectLife integration bundles a Home Assistant-native Lovelace card for appliance control.
 The JavaScript module is served automatically by the integration and registered as a versioned
 Lovelace module resource. There is no separate `/config/www` copy to maintain.
+The resource URL includes a build hash, so edits to the bundled card are picked up
+without changing the version. Reload the browser after installing or changing
+the card; reloading the ConnectLife config entry refreshes the registered URL.
 
 ## Add the card
 
@@ -65,23 +68,12 @@ The dishwasher view emphasizes:
 Home Assistant's `.storage` through a small ConnectLife websocket API. Presets are keyed to the Home
 Assistant device, so they are available from other browsers and dashboard clients.
 
-Saving a preset with the same name updates it. Applying a preset validates that every target entity
-still belongs to the selected appliance and that select values are currently legal. Program and
-mode are applied before dependent settings so conditional controls can update first.
-
-Dashboard-defined presets remain supported:
-
-```yaml
-type: custom:connectlife-appliance-card
-device_id: YOUR_DEVICE_ID
-presets:
-  - name: Everyday
-    icon: mdi:tshirt-crew
-    entities:
-      select.example_program: mix
-      select.example_temperature: "40"
-      switch.example_prewash: false
-```
+Saving a preset with the same name updates it. Presets can also be renamed or deleted
+from the card. Each setting is stored under its ConnectLife translation key, so
+renaming an entity in Home Assistant does not break a preset. Applying a preset
+checks current availability, select options and number limits. It applies the
+program first and waits for Home Assistant to publish the new state before sending
+dependent settings. Stale or invalid settings are skipped.
 
 ## Extending to more appliance types
 

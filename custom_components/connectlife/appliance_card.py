@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 from datetime import UTC, datetime
+from hashlib import sha256
 import logging
+import math
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -14,10 +16,7 @@ import voluptuous as vol
 
 from homeassistant.components import websocket_api
 from homeassistant.components.http import StaticPathConfig
-from homeassistant.components.lovelace.const import DOMAIN as LOVELACE_DOMAIN
-from homeassistant.components.lovelace.resources import ResourceStorageCollection
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
@@ -25,8 +24,9 @@ from homeassistant.helpers.storage import Store
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+LOVELACE_DOMAIN = "lovelace"
 
-CARD_VERSION = "0.3.0"
+CARD_VERSION = "0.46.1"
 CARD_URL = "/connectlife_static/connectlife-appliance-card.js"
 CARD_PATH = Path(__file__).parent / "frontend" / "connectlife-appliance-card.js"
 
@@ -37,6 +37,7 @@ MAX_PRESETS_PER_DEVICE = 30
 MAX_PRESET_ENTITIES = 80
 
 PRESET_VALUE = vol.Any(bool, int, float, str)
+CONTROL_DOMAINS = {"select", "switch", "number"}
 
 
 class ApplianceCardPresetStore:
@@ -131,6 +132,27 @@ class ApplianceCardPresetStore:
             await self._store.async_save(self._data)
             return deepcopy(kept)
 
+    async def async_rename(
+        self, device_id: str, preset_id: str, name: str
+    ) -> list[dict[str, Any]]:
+        """Rename one preset without changing its saved controls."""
+        async with self._lock:
+            presets = self._data.setdefault("devices", {}).get(device_id, [])
+            if not isinstance(presets, list):
+                raise KeyError(preset_id)
+            target = next((p for p in presets if p.get("id") == preset_id), None)
+            if target is None:
+                raise KeyError(preset_id)
+            if any(
+                p is not target and str(p.get("name", "")).casefold() == name.casefold()
+                for p in presets
+            ):
+                raise ValueError("A preset with that name already exists")
+            target["name"] = name
+            target["updated_at"] = datetime.now(UTC).isoformat()
+            await self._store.async_save(self._data)
+            return deepcopy(presets)
+
 
 def _is_connectlife_device(hass: HomeAssistant, device_id: str) -> bool:
     """Return whether a HA device belongs to this integration."""
@@ -143,6 +165,26 @@ def _is_connectlife_device(hass: HomeAssistant, device_id: str) -> bool:
 def _preset_store(hass: HomeAssistant) -> ApplianceCardPresetStore:
     """Return the initialized card preset store."""
     return hass.data[DOMAIN][DATA_PRESET_STORE]
+
+
+def _control_key(entry: er.RegistryEntry) -> str | None:
+    """Stable frontend key for a mapped writable entity."""
+    if entry.platform != DOMAIN or entry.domain not in CONTROL_DOMAINS:
+        return None
+    if not entry.translation_key:
+        return None
+    return f"{entry.domain}:{entry.translation_key}"
+
+
+def _valid_preset_value(domain: str, value: Any) -> bool:
+    """Accept only values supported by the target Home Assistant platform."""
+    if domain == "select":
+        return isinstance(value, str)
+    if domain == "switch":
+        return isinstance(value, bool)
+    if domain == "number":
+        return type(value) in (int, float) and math.isfinite(value)
+    return False
 
 
 @websocket_api.websocket_command(
@@ -171,7 +213,7 @@ def websocket_list_presets(
         vol.Required("device_id"): str,
         vol.Required("name"): vol.All(str, vol.Length(min=1, max=80)),
         vol.Required("entities"): vol.All(
-            {cv.entity_id: PRESET_VALUE},
+            {str: PRESET_VALUE},
             vol.Length(max=MAX_PRESET_ENTITIES),
         ),
     }
@@ -189,19 +231,32 @@ async def websocket_save_preset(
         return
 
     entity_registry = er.async_get(hass)
-    for entity_id in msg["entities"]:
-        entry = entity_registry.async_get(entity_id)
-        if entry is None or entry.device_id != device_id:
+    name = msg["name"].strip()
+    if not name:
+        connection.send_error(msg["id"], "invalid_name", "Preset name is required")
+        return
+    available_keys = {
+        key: entry.domain
+        for entry in er.async_entries_for_device(entity_registry, device_id)
+        if entry.disabled_by is None and (key := _control_key(entry)) is not None
+    }
+    for key, value in msg["entities"].items():
+        if key not in available_keys:
             connection.send_error(
                 msg["id"],
                 "invalid_entity",
-                f"Entity {entity_id} does not belong to the selected device",
+                f"Control {key} is not available on the selected device",
+            )
+            return
+        if not _valid_preset_value(available_keys[key], value):
+            connection.send_error(
+                msg["id"], "invalid_value", f"Invalid value for control {key}"
             )
             return
 
     try:
         presets = await _preset_store(hass).async_save(
-            device_id, msg["name"].strip(), msg["entities"]
+            device_id, name, msg["entities"]
         )
     except ValueError as err:
         connection.send_error(msg["id"], "preset_limit", str(err))
@@ -235,6 +290,42 @@ async def websocket_delete_preset(
     connection.send_result(msg["id"], {"presets": presets})
 
 
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "connectlife/appliance_card/presets/rename",
+        vol.Required("device_id"): str,
+        vol.Required("preset_id"): str,
+        vol.Required("name"): vol.All(str, vol.Length(min=1, max=80)),
+    }
+)
+@websocket_api.async_response
+async def websocket_rename_preset(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Rename a stored appliance-card preset."""
+    device_id = msg["device_id"]
+    if not _is_connectlife_device(hass, device_id):
+        connection.send_error(msg["id"], "invalid_device", "Not a ConnectLife device")
+        return
+    try:
+        name = msg["name"].strip()
+        if not name:
+            connection.send_error(msg["id"], "invalid_name", "Preset name is required")
+            return
+        presets = await _preset_store(hass).async_rename(
+            device_id, msg["preset_id"], name
+        )
+    except KeyError:
+        connection.send_error(msg["id"], "preset_not_found", "Preset not found")
+        return
+    except ValueError as err:
+        connection.send_error(msg["id"], "preset_name_conflict", str(err))
+        return
+    connection.send_result(msg["id"], {"presets": presets})
+
+
 async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
     """Register or update the appliance card as a Lovelace module resource.
 
@@ -255,14 +346,15 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
         return
     await resources.async_get_info()
 
-    resource_url = f"{CARD_URL}?v={CARD_VERSION}"
+    build = sha256(await asyncio.to_thread(CARD_PATH.read_bytes)).hexdigest()[:12]
+    resource_url = f"{CARD_URL}?v={CARD_VERSION}&build={build}"
     matches = [
         item
         for item in resources.async_items()
         if str(item.get("url", "")).split("?", 1)[0] == CARD_URL
     ]
 
-    if not isinstance(resources, ResourceStorageCollection):
+    if not hasattr(resources, "async_create_item"):
         if not any(item.get("url") == resource_url for item in matches):
             _LOGGER.warning(
                 "Lovelace resources are not storage-managed; add %s as a module resource manually",
@@ -284,6 +376,11 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
         )
 
 
+async def async_refresh_appliance_card_resource(hass: HomeAssistant) -> None:
+    """Refresh the bundled module URL when a config entry is reloaded."""
+    await _async_register_lovelace_resource(hass)
+
+
 async def async_setup_appliance_card(hass: HomeAssistant) -> None:
     """Serve and register the appliance card plus its preset API."""
     hass.data.setdefault(DOMAIN, {})
@@ -300,5 +397,6 @@ async def async_setup_appliance_card(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, websocket_list_presets)
     websocket_api.async_register_command(hass, websocket_save_preset)
     websocket_api.async_register_command(hass, websocket_delete_preset)
+    websocket_api.async_register_command(hass, websocket_rename_preset)
 
     _LOGGER.debug("ConnectLife appliance card v%s registered", CARD_VERSION)

@@ -12,7 +12,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 from connectlife.api import LifeConnectAuthError, LifeConnectError
 
-from .appliance_card import async_setup_appliance_card
+from .appliance_card import async_refresh_appliance_card_resource, async_setup_appliance_card
 from .client import create_api
 from .const import (
     CONF_DEVELOPMENT_MODE,
@@ -54,6 +54,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up ConnectLife from a config entry."""
+    await async_refresh_appliance_card_resource(hass)
     _LOGGER.debug("Setting up ConnectLife")
     _LOGGER.debug("Options: %s", entry.options)
     hass.data.setdefault(DOMAIN, {})
