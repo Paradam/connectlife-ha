@@ -187,3 +187,13 @@ backend still requires acceptance.
 ## Contributing
 
 See [DEVELOPMENT.md](DEVELOPMENT.md).
+
+## Appliance dashboard card
+
+This fork includes a purpose-built **ConnectLife Appliance Card** for Home Assistant dashboards.
+It is loaded automatically by the integration and currently has dedicated washing-machine and
+dishwasher views. The card is capability-driven, follows Home Assistant theme variables, hides
+controls that are not valid for the current program, and supports Home Assistant-stored per-device
+presets.
+
+See [docs/appliance-card.md](docs/appliance-card.md) for usage and extension details.
