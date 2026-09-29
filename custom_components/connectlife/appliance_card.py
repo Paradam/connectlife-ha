@@ -338,7 +338,7 @@ async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
         )
         return
 
-    resources = lovelace_data.get("resources")
+    resources = lovelace_data.resources
     if resources is None:
         _LOGGER.warning(
             "Lovelace resource registry is not available; ConnectLife appliance card resource was not registered"

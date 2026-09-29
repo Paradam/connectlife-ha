@@ -96,7 +96,7 @@ function update(c, key, value, attributes) {
   c.hass = { ...previous, states };
 }
 
-test('card registers once, version stays 0.46.0, and blank form needs no device', () => {
+test('card registers once and blank form needs no device', () => {
   assert.equal(typeof Card.getConfigForm, 'function');
   const stub = Card.getStubConfig();
   assert.equal(stub.type, undefined);

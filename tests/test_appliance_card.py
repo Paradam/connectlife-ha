@@ -132,7 +132,7 @@ async def test_appliance_card_registers_versioned_lovelace_resource(hass, monkey
             return item
 
     resources = FakeResourceStorageCollection()
-    hass.data["lovelace"] = {"resources": resources}
+    hass.data["lovelace"] = SimpleNamespace(resources=resources)
 
     await appliance_card._async_register_lovelace_resource(hass)
 
@@ -172,7 +172,7 @@ async def test_resource_is_created_once_and_build_hash_refreshes(hass, monkeypat
     asset = tmp_path / "card.js"
     asset.write_text("first")
     monkeypatch.setattr(appliance_card, "CARD_PATH", asset)
-    hass.data["lovelace"] = {"resources": resources}
+    hass.data["lovelace"] = SimpleNamespace(resources=resources)
     await appliance_card._async_register_lovelace_resource(hass)
     original_url = resources.items[0]["url"]
     await appliance_card._async_register_lovelace_resource(hass)
